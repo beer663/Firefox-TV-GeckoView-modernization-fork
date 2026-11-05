@@ -1,0 +1,262 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace 'org.mozilla.tv.firefox'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "org.mozilla.tv.firefox"
+        minSdk 22
+        targetSdk 28
+        versionCode 11
+        versionName "4.8"
+        testInstrumentationRunner "org.mozilla.tv.firefox.FirefoxOnDeviceTestRunner"
+        testInstrumentationRunnerArguments clearPackageData: 'true'
+
+        multiDexEnabled true
+
+        ndk {
+            // Keep the 32-bit ARM ABI required by the onn TV 4K box, plus x86 for emulators.
+            abiFilters 'armeabi-v7a', 'x86'
+        }
+
+        // The old build read this from a secret file; there is no crash-report server any more.
+        buildConfigField 'String', 'SENTRY_DSN', 'null'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        lintConfig file("lint.xml")
+        baseline file("lint-baseline.xml")
+        abortOnError false
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            applicationIdSuffix ".debug"
+        }
+    }
+
+    flavorDimensions "engine"
+
+    productFlavors {
+        // Keep the System WebView build while validating the Gecko engine flavor separately.
+        system {
+            dimension "engine"
+        }
+        gecko {
+            dimension "engine"
+        }
+    }
+
+    testOptions {
+        unitTests.includeAndroidResources true // for robolectric.
+        execution 'ANDROIDX_TEST_ORCHESTRATOR'
+    }
+
+    sourceSets {
+        test {
+            resources {
+                // Make the default asset folder available as test resource folder.
+                srcDir "${projectDir}/src/main/assets/"
+            }
+        }
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/proguard/androidx-annotations.pro', 'META-INF/atomicfu.kotlin_module']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        allWarningsAsErrors = false
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'io.sentry:sentry-android:1.7.21'
+
+    // Pin the AndroidX UI base explicitly for app source superclasses.
+    implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation "androidx.fragment:fragment-ktx:1.6.2"
+    implementation "androidx.legacy:legacy-support-v4:$androidx_version"
+    implementation "androidx.cardview:cardview:$androidx_version"
+    implementation "androidx.browser:browser:$androidx_version"
+    implementation "com.google.android.material:material:$androidx_version"
+    implementation "androidx.leanback:leanback:$androidx_version"
+    implementation "androidx.recyclerview:recyclerview:$androidx_version"
+    implementation "androidx.core:core-ktx:1.0.2"
+    implementation "androidx.constraintlayout:constraintlayout:1.1.3"
+    implementation "androidx.work:work-runtime-ktx:$androidx_work_version"
+    implementation 'com.squareup.picasso:picasso:2.71828'
+    implementation 'com.google.android.gms:play-services-oss-licenses:17.1.0'
+
+    implementation ("com.google.code.findbugs:annotations:3.0.1") {
+        // We really only need the SuppressFBWarnings annotation, everything else can be ignored.
+        transitive = false
+    }
+
+    implementation "org.mozilla.components:concept-fetch:$moz_components_version"
+    implementation "org.mozilla.components:concept-push:$moz_components_version"
+    implementation "org.mozilla.components:lib-push-amazon:$moz_components_version"
+    implementation "org.mozilla.components:lib-fetch-okhttp:$moz_components_version"
+    implementation "org.mozilla.components:lib-fetch-httpurlconnection:$moz_components_version"
+    implementation "org.mozilla.components:browser-session:$moz_components_version"
+    implementation "org.mozilla.components:browser-search:$moz_components_version"
+    implementation "org.mozilla.components:browser-domains:$moz_components_version"
+    implementation "org.mozilla.components:concept-engine:$moz_components_version"
+    implementation "org.mozilla.components:service-telemetry:$moz_components_version"
+    implementation "org.mozilla.components:ui-colors:$moz_components_version"
+    implementation "org.mozilla.components:ui-fonts:$moz_components_version"
+    implementation "org.mozilla.components:feature-session:$moz_components_version"
+    implementation "org.mozilla.components:feature-push:$moz_components_version"
+    implementation "org.mozilla.components:feature-sendtab:$moz_components_version"
+    implementation "org.mozilla.components:ui-icons:$moz_components_version"
+    implementation "org.mozilla.components:service-fretboard:$moz_components_version"
+    implementation "org.mozilla.components:service-firefox-accounts:$moz_components_version"
+    implementation "org.mozilla.components:support-ktx:$moz_components_version"
+    implementation "org.mozilla.components:support-utils:$moz_components_version"
+    implementation "org.mozilla.components:support-rusthttp:$moz_components_version"
+
+    // Keep engine implementations flavor-scoped so each APK uses exactly one browser engine.
+    systemImplementation "org.mozilla.components:browser-engine-system:$moz_components_version"
+    geckoImplementation "org.mozilla.components:browser-engine-gecko:$moz_components_version"
+
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutines_version"
+
+    implementation "io.reactivex.rxjava2:rxjava:2.2.6"
+    implementation 'io.reactivex.rxjava2:rxkotlin:2.3.0'
+    implementation 'io.reactivex.rxjava2:rxandroid:2.1.1'
+
+    // lifecycle-extensions was discontinued at 2.2.0; 2.6.2 was never published.
+    // Keep the other Lifecycle modules on architecture_components_version (2.6.2).
+    implementation "androidx.lifecycle:lifecycle-extensions:2.2.0"
+    implementation "androidx.lifecycle:lifecycle-viewmodel:$architecture_components_version"
+    implementation "androidx.lifecycle:lifecycle-reactivestreams:$architecture_components_version"
+    testImplementation "androidx.arch.core:core-testing:$architecture_components_version"
+
+    testImplementation "androidx.test.ext:junit:$junit"
+    testImplementation "org.robolectric:robolectric:$robolectric_version"
+    testImplementation 'org.mockito:mockito-core:2.24.5'
+    testImplementation "io.mockk:mockk:1.9.1"
+
+    testImplementation "androidx.test:core:$test_core"
+    androidTestImplementation "androidx.test:core:$test_core"
+
+    androidTestImplementation "androidx.test.uiautomator:uiautomator:$uiautomator_version"
+
+    androidTestImplementation "androidx.test.espresso:espresso-core:$espresso_version"
+    androidTestImplementation("androidx.test.espresso:espresso-contrib:$espresso_version")
+    androidTestImplementation "androidx.test.espresso:espresso-idling-resource:$espresso_version"
+    androidTestImplementation "androidx.test.espresso:espresso-web:$espresso_version"
+
+    androidTestImplementation "androidx.test:runner:$test_runner"
+    androidTestImplementation "androidx.test:rules:$test_rules"
+    androidTestUtil "androidx.test:orchestrator:$test_orchestrator"
+
+    androidTestImplementation "org.mozilla.components:support-android-test:$moz_components_version"
+    testImplementation "org.mozilla.components:support-test:$moz_components_version"
+    testImplementation "org.mozilla.components:support-test-appservices:$moz_components_version"
+
+    androidTestImplementation 'com.squareup.okhttp3:mockwebserver:3.10.0'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:3.10.0'
+
+    androidTestImplementation "tools.fastlane:screengrab:1.2.0", {
+        exclude group: 'com.android.support.test.uiautomator', module: 'uiautomator-v18'
+    }
+
+    androidTestImplementation "org.jetbrains.kotlin:kotlin-reflect:${kotlin_version}"
+
+    // Download from https://developer.amazon.com/sdk-download
+    compileOnly files("libs/amazon-device-messaging-${adm_version}.jar")
+    testImplementation files("libs/amazon-device-messaging-${adm_version}.jar")
+}
+
+// -------------------------------------------------------------------------------------------------
+// L10N: Generate list of locales
+// Firefox TV provides its own (Android independent) locale switcher. That switcher requires a list
+// of locale codes. The generated file (src/main/java/.../generated/LocaleList.java) is checked in;
+// run `gradle generateLocaleList` to refresh it after adding a locale.
+// -------------------------------------------------------------------------------------------------
+
+def getEnabledLocales() {
+    def resDir = file('src/main/res')
+
+    def potentialLanguageDirs = resDir.listFiles(new FilenameFilter() {
+        @Override
+        boolean accept(File dir, String name) {
+            return name.startsWith("values-")
+        }
+    })
+
+    def langs = potentialLanguageDirs.findAll {
+        // Only select locales where strings.xml exists
+        // Some locales might only contain e.g. sumo URLs in urls.xml, and should be skipped (see es vs es-ES/etc)
+        return file(new File(it, "strings.xml")).exists()
+    }.collect {
+        return it.name
+    }.collect {
+        return it.substring("values-".length())
+    }.collect {
+        if (it.length() > 3 && it.contains("-r")) {
+            // Android resource dirs add an "r" prefix to the region - we need to strip that for Java usage.
+            def regionPrefixPosition = it.indexOf("-r") + 1
+            return it.substring(0, regionPrefixPosition) + it.substring(regionPrefixPosition + 1)
+        } else {
+            return it
+        }
+    }.collect {
+        return '"' + it + '"'
+    }
+
+    // en-US is the default language (in "values") and therefore needs to be added separately.
+    langs << '"en-US"'
+    return langs.sort { it }
+}
+
+def generatedLocaleListDir = 'src/main/java/org/mozilla/tv/firefox/generated'
+def generatedLocaleListFilename = 'LocaleList.java'
+
+task generateLocaleList {
+    doLast {
+        def dir = file(generatedLocaleListDir)
+        dir.mkdir()
+        def localeList = file(new File(dir, generatedLocaleListFilename))
+
+        localeList.delete()
+        localeList.createNewFile()
+        localeList << "package org.mozilla.tv.firefox.generated;" << "\n" << "\n"
+        localeList << "import java.util.Arrays;" << "\n"
+        localeList << "import java.util.Collections;" << "\n"
+        localeList << "import java.util.List;" << "\n"
+        localeList << "\n"
+        localeList << "public class LocaleList {" << "\n"
+        // findbugs doesn't like "public static final String[]", see http://findbugs.sourceforge.net/bugDescriptions.html#MS_MUTABLE_ARRAY
+        localeList << "    public static final List<String> BUNDLED_LOCALES = Collections.unmodifiableList(Arrays.asList(new String[] { "
+        localeList << getEnabledLocales().join(", ") + " }));" << "\n"
+        localeList << "}" << "\n"
+    }
+}
