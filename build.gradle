@@ -1,0 +1,53 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+buildscript {
+    ext.androidx_version = '1.0.0'
+    // Lifecycle 2.6 provides the current LiveData/Reactive Streams bridge required by the app.
+    ext.architecture_components_version = '2.6.2'
+    ext.kotlin_version = '1.9.24'
+    ext.coroutines_version = '1.0.1'
+    ext.moz_components_version = '24.0.0'
+    ext.androidx_work_version = '2.0.1'
+    ext.adm_version = '1.0.1' // Also update proguard rule if this gets updated
+
+    ext.robolectric_version = '4.0.2'
+
+    // Support library test dependencies
+    ext.test_core = '1.1.0'
+    ext.test_runner = '1.1.1'
+    ext.test_rules = ext.test_runner
+    ext.test_orchestrator = '1.1.1'
+    ext.espresso_version = '3.1.1'
+    ext.uiautomator_version = '2.2.0'
+    ext.junit = "1.1.0"
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.5.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+allprojects {
+    repositories {
+        maven {
+            url "https://maven.mozilla.org/maven2"
+            content {
+                // only look on the Mozilla maven for Mozilla dependencies
+                includeGroupByRegex "org\\.mozilla\\..*"
+            }
+        }
+        google()
+        mavenCentral()
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}
