@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<resources>
+    <!-- Stable preference storage keys referenced by settings.xml. -->
+    <string name="pref_key_privacy_block_ads" translatable="false">pref_privacy_block_ads</string>
+    <string name="pref_key_privacy_block_analytics" translatable="false">pref_privacy_block_analytics</string>
+    <string name="pref_key_privacy_block_social" translatable="false">pref_privacy_block_social</string>
+    <string name="pref_key_privacy_block_other" translatable="false">pref_privacy_block_other</string>
+    <string name="pref_key_performance_block_webfonts" translatable="false">pref_performance_block_webfonts</string>
+
+    <!-- Labels referenced by the browser overlay layout. -->
+    <string name="menu_drawer_home">Home</string>
+    <string name="nav_close_hint">Press MENU to close</string>
+</resources>
