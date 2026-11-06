@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/browser_overlay_background"
+    android:orientation="vertical"
+    android:descendantFocusability="afterDescendants"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/navButtonBack"
+            style="@style/NavigationButton"
+            android:src="@drawable/ic_back"
+            android:contentDescription="@string/content_description_back"
+            android:nextFocusLeft="@id/navButtonBack"/>
+
+        <ImageButton
+            android:id="@+id/navButtonForward"
+            style="@style/NavigationButton"
+            android:src="@drawable/ic_forward"
+            android:contentDescription="@string/content_description_forward"/>
+
+        <ImageButton
+            android:id="@+id/navButtonReload"
+            style="@style/NavigationButton"
+            android:src="@drawable/ic_refresh"
+            android:contentDescription="@string/content_description_reload"/>
+
+        <org.mozilla.focus.widget.CheckableImageButton
+            android:id="@+id/pinButton"
+            style="@style/NavigationButton"
+            android:src="@drawable/pin_selector"
+            android:contentDescription="@string/pin_label"/>
+
+        <org.mozilla.focus.widget.CheckableImageButton
+            android:id="@+id/turboButton"
+            style="@style/NavigationButton"
+            android:src="@drawable/turbo_selector"
+            android:contentDescription="@string/turbo_mode"
+            android:nextFocusRight="@+id/navButtonHome"/>
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <ImageView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_firefox_and_workmark" />
+
+
+    </LinearLayout>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical">
+        <ImageButton
+            android:id="@+id/navButtonHome"
+            style="@style/NavigationButton"
+            android:src="@drawable/ic_home"
+            android:contentDescription="@string/menu_drawer_home"
+            android:nextFocusLeft="@id/turboButton"/>
+
+        <!-- Image src set in code to fix SVG. -->
+        <ImageButton
+            android:id="@+id/navButtonSettings"
+            style="@style/NavigationButton"
+            android:contentDescription="@string/menu_settings"/>
+
+        <!-- Drawable tinted in code (XML needs API 23+). -->
+        <org.mozilla.focus.widget.InlineAutocompleteEditText
+            android:id="@+id/navUrlInput"
+            android:drawableStart="@drawable/ic_search"
+            android:drawablePadding="10dp"
+            android:layout_width="400dp"
+            android:layout_height="@dimen/urlbar_height"
+            android:background="@drawable/nav_urlbar_background"
+            android:hint="@string/urlbar_hint"
+            android:imeOptions="actionGo|flagNoExtractUi|flagNoFullscreen"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:inputType="textUri"
+            android:lines="1"
+            android:importantForAutofill="no"
+            android:cursorVisible="false"
+            android:textIsSelectable="false"
+            android:textColor="@color/tv_white"
+            android:nextFocusRight="@id/navUrlInput"
+            />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Drawable tinted in code (XML needs API 23+). -->
+        <TextView
+            android:id="@+id/navCloseHint"
+            android:gravity="center_vertical"
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:layout_weight="0"
+            android:drawableStart="@drawable/ic_wide_menu"
+            android:drawablePadding="5dp"
+            android:text="@string/nav_close_hint"
+            android:textColor="@color/tv_white" />
+    </LinearLayout>
+
+</LinearLayout>
