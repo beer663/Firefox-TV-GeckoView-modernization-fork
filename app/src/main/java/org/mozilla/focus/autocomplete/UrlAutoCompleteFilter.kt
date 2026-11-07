@@ -36,7 +36,7 @@ class UrlAutoCompleteFilter : InlineAutocompleteEditText.OnFilterListener {
         }
 
         // Search terms are all lowercase already, we just need to lowercase the search text
-        val searchText = rawSearchText.toLowerCase(Locale.US)
+        val searchText = rawSearchText.lowercase(Locale.US)
 
         settings?.let {
             if (it.shouldAutocompleteFromShippedDomainList()) {

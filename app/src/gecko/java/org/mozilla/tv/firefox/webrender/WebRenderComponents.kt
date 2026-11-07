@@ -35,7 +35,8 @@ class WebRenderComponents(applicationContext: Context, systemUserAgent: String) 
 
     val engine: Engine by lazy {
         val runtimeSettingsBuilder = GeckoRuntimeSettings.Builder()
-        runtimeSettingsBuilder.autoplayDefault(GeckoRuntimeSettings.AUTOPLAY_DEFAULT_ALLOWED)
+        // Legacy Mozilla Components helper is not used by the GeckoSession browser.
+        // GeckoView 159 removed this runtime autoplay setter.
 
         val runtime = GeckoRuntime.create(applicationContext,
                 runtimeSettingsBuilder.build())
