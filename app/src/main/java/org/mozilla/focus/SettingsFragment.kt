@@ -8,6 +8,8 @@ import org.mozilla.tv.firefox.R
 
 import android.app.AlertDialog
 import android.content.DialogInterface
+import android.content.Intent
+import org.mozilla.focus.extensions.ExtensionsActivity
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
@@ -29,6 +31,7 @@ class SettingsFragment : Fragment() {
     private val telemetryButton get() = requireView().findViewById<CheckBox>(R.id.telemetryButton)
     private val telemetryView get() = requireView().findViewById<View>(R.id.telemetryView)
     private val deleteButton get() = requireView().findViewById<View>(R.id.deleteButton)
+    private val extensionsButton get() = requireView().findViewById<View>(R.id.extensionsButton)
     private val aboutButton get() = requireView().findViewById<View>(R.id.aboutButton)
     private val privacyNoticeButton get() = requireView().findViewById<View>(R.id.privacyNoticeButton)
     private val settingsWebView get() = requireView().findViewById<View>(R.id.settingsWebView) as IWebView
@@ -72,6 +75,10 @@ class SettingsFragment : Fragment() {
 
             val alert11 = builder1.create()
             alert11.show()
+        }
+
+        extensionsButton.setOnClickListener {
+            startActivity(Intent(requireContext(), ExtensionsActivity::class.java))
         }
 
         aboutButton.setOnClickListener {

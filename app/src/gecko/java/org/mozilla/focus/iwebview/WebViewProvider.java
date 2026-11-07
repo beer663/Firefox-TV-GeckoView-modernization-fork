@@ -36,6 +36,11 @@ public final class WebViewProvider {
         return runtime;
     }
 
+    /** Use this same runtime/profile for the browser and its Extensions screen. */
+    public static GeckoRuntime getRuntime(Context context) {
+        return runtime(context);
+    }
+
     public static void preload(Context context) {
         runtime(context);
     }
@@ -49,7 +54,8 @@ public final class WebViewProvider {
     }
 
     public static void performCleanup(Context context) {
-        // Private sessions do not persist browsing data.
+        // Session storage is now persistent for streaming logins.
+        // Clearing data needs the GeckoRuntime storage controller, not this legacy hook.
     }
 
     public static void performNewBrowserSessionCleanup() {
@@ -69,8 +75,8 @@ public final class WebViewProvider {
         public GeckoWebView(Context context, AttributeSet attrs) {
             super(context, attrs);
             geckoSession = new GeckoSession(new GeckoSessionSettings.Builder()
-                    .usePrivateMode(true)
-                    .useTrackingProtection(true)
+                    .usePrivateMode(false)
+                    .useTrackingProtection(false)
                     .build());
             geckoSession.setProgressDelegate(new GeckoSession.ProgressDelegate() {
                 @Override

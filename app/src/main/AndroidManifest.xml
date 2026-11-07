@@ -94,6 +94,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="org.mozilla.focus.extensions.ExtensionsActivity"
+            android:exported="false"
+            android:label="@string/extensions_menu_title" />
+
         <activity android:name="org.mozilla.focus.browser.InfoActivity"
             android:exported="false" />
 

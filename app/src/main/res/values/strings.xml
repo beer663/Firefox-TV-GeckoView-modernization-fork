@@ -301,4 +301,5 @@
     <string name="banner_more_info_button">Learn more</string>
     <string name="accessibility_announcement_loading">Loading</string>
     <string name="accessibility_announcement_loading_finished">Page loaded</string>
+    <string name="extensions_menu_title">Extensions</string>
 </resources>
