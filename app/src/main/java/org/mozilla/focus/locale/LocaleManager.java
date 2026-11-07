@@ -16,7 +16,7 @@ import android.preference.PreferenceManager;
 import android.util.Log;
 
 import org.mozilla.tv.firefox.R;
-import org.mozilla.focus.generated.LocaleList;
+import org.mozilla.tv.firefox.generated.LocaleList;
 
 import java.util.Collection;
 import java.util.Locale;
