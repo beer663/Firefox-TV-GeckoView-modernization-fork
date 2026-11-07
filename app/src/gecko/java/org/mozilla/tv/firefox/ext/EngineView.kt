@@ -75,7 +75,9 @@ fun EngineView.updateFullscreenScrollPosition() {
 }
 
 fun EngineView.addSubmitListenerToInputElements() {
-    throw NotImplementedError("This has not been implemented in Gecko. Please move over System implementation")
+    // Gecko does not currently implement the System WebView form-submit bridge.
+    // Avoid crashing when this optional hook is called. A proper Gecko-compatible
+    // DOM event bridge must be implemented before form-submit tracking can work.
 }
 
 private fun EngineView.evalJSWithTargetVideo(getExpressionToEval: (videoId: String) -> String) {
