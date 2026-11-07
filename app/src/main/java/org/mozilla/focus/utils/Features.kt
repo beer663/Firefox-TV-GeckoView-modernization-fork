@@ -4,7 +4,7 @@
 
 package org.mozilla.focus.utils
 
-import org.mozilla.focus.BuildConfig
+import org.mozilla.tv.firefox.BuildConfig
 
 /**
  * Simple feature flags.

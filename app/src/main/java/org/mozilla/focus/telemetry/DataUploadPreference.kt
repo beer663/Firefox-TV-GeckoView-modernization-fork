@@ -7,7 +7,7 @@ package org.mozilla.focus.telemetry
 import android.content.Context
 import android.os.StrictMode
 import android.preference.PreferenceManager
-import org.mozilla.focus.R
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.utils.AppConstants
 import org.mozilla.telemetry.TelemetryHolder
 

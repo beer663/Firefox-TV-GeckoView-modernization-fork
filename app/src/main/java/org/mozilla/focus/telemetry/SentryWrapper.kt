@@ -8,7 +8,7 @@ import android.content.Context
 import io.sentry.Sentry
 import io.sentry.android.AndroidSentryClientFactory
 import io.sentry.event.User
-import org.mozilla.focus.BuildConfig
+import org.mozilla.tv.firefox.BuildConfig
 
 /**
  * An interface to the Sentry crash reporting SDK. All code that touches the Sentry APIs
