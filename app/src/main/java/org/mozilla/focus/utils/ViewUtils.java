@@ -10,7 +10,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import androidx.annotation.StringRes;
-import android.support.design.widget.Snackbar;
+import com.google.android.material.snackbar.Snackbar;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import android.view.Gravity;
@@ -123,7 +123,7 @@ public class ViewUtils {
         final View snackbarView = snackbar.getView();
         snackbarView.setBackgroundColor(ContextCompat.getColor(context, R.color.snackbarBackground));
 
-        final TextView snackbarTextView = (TextView) snackbarView.findViewById(android.support.design.R.id.snackbar_text);
+        final TextView snackbarTextView = (TextView) snackbarView.findViewById(com.google.android.material.R.id.snackbar_text);
         snackbarTextView.setTextColor(ContextCompat.getColor(context, R.color.snackbarTextColor));
         snackbarTextView.setGravity(Gravity.CENTER);
         snackbarTextView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);

@@ -7,7 +7,7 @@ package org.mozilla.focus.browser.cursor
 import android.graphics.PointF
 import android.os.SystemClock
 import androidx.annotation.UiThread
-import android.support.v4.math.MathUtils
+import androidx.core.math.MathUtils
 import android.view.MotionEvent
 import kotlinx.coroutines.experimental.Deferred
 import kotlinx.coroutines.experimental.android.UI
