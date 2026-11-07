@@ -16,7 +16,7 @@ import android.util.AttributeSet;
 import android.view.View;
 import android.view.ViewTreeObserver;
 
-import org.mozilla.focus.R;
+import org.mozilla.tv.firefox.R;
 
 /**
  * A helper class to implement a ViewGroup that resizes dynamically (by adding padding to the bottom)

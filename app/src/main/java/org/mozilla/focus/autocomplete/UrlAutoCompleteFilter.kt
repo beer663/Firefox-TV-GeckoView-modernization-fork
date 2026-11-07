@@ -6,10 +6,10 @@ package org.mozilla.focus.autocomplete
 
 import android.content.Context
 import android.util.Log
-import kotlinx.coroutines.experimental.CommonPool
-import kotlinx.coroutines.experimental.android.UI
-import kotlinx.coroutines.experimental.async
-import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.mozilla.focus.locale.Locales
 import org.mozilla.focus.utils.Settings
 import org.mozilla.focus.widget.InlineAutocompleteEditText
@@ -78,10 +78,9 @@ class UrlAutoCompleteFilter : InlineAutocompleteEditText.OnFilterListener {
         settings = Settings.getInstance(context)
 
         if (loadDomainsFromDisk) {
-            launch(UI) {
-                val domains = async(CommonPool) { loadDomains(context) }
-
-                onDomainsLoaded(domains.await())
+            CoroutineScope(Dispatchers.Main).launch {
+                val domains = withContext(Dispatchers.IO) { loadDomains(context.applicationContext) }
+                onDomainsLoaded(domains)
             }
         }
     }
@@ -108,7 +107,7 @@ class UrlAutoCompleteFilter : InlineAutocompleteEditText.OnFilterListener {
         val assetManager = context.assets
 
         try {
-            availableDomains.addAll(assetManager.list("domains"))
+            assetManager.list("domains")?.let { availableDomains.addAll(it.asList()) }
         } catch (e: IOException) {
             Log.w(LOG_TAG, "Could not list domain list directory")
         }

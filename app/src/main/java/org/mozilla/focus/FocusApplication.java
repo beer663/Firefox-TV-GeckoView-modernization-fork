@@ -5,6 +5,8 @@
 
 package org.mozilla.focus;
 
+import org.mozilla.tv.firefox.R
+
 import android.os.StrictMode;
 import android.preference.PreferenceManager;
 

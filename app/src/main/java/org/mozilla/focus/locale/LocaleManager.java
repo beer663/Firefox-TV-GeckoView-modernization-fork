@@ -15,7 +15,7 @@ import android.content.res.Resources;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
-import org.mozilla.focus.R;
+import org.mozilla.tv.firefox.R;
 import org.mozilla.focus.generated.LocaleList;
 
 import java.util.Collection;

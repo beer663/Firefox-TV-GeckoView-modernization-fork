@@ -5,7 +5,7 @@
 
 package org.mozilla.focus.utils;
 
-import org.mozilla.focus.BuildConfig;
+import org.mozilla.tv.firefox.BuildConfig;
 
 public final class AppConstants {
     private static final String BUILD_TYPE_DEBUG = "debug";

@@ -4,6 +4,8 @@
 
 package org.mozilla.focus
 
+import org.mozilla.tv.firefox.R
+
 import android.app.AlertDialog
 import android.content.DialogInterface
 import android.os.Bundle
@@ -12,7 +14,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
-import kotlinx.android.synthetic.main.fragment_settings.*
+import android.widget.CheckBox
+import android.widget.ImageView
+import org.mozilla.focus.iwebview.IWebView
 import org.mozilla.focus.browser.InfoActivity
 import org.mozilla.focus.ext.getAccessibilityManager
 import org.mozilla.focus.ext.isVoiceViewEnabled
@@ -22,25 +26,33 @@ import org.mozilla.focus.telemetry.TelemetryWrapper
 
 /** The settings for the app. */
 class SettingsFragment : Fragment() {
+    private val telemetryButton get() = requireView().findViewById<CheckBox>(R.id.telemetryButton)
+    private val telemetryView get() = requireView().findViewById<View>(R.id.telemetryView)
+    private val deleteButton get() = requireView().findViewById<View>(R.id.deleteButton)
+    private val aboutButton get() = requireView().findViewById<View>(R.id.aboutButton)
+    private val privacyNoticeButton get() = requireView().findViewById<View>(R.id.privacyNoticeButton)
+    private val settingsWebView get() = requireView().findViewById<View>(R.id.settingsWebView) as IWebView
+    private val lockIcon get() = requireView().findViewById<ImageView>(R.id.ic_lock)
+
     private val voiceViewStateChangeListener = AccessibilityManager.TouchExplorationStateChangeListener {
         updateForAccessibility()
     }
 
-    override fun onCreateView(inflater: LayoutInflater?, container: ViewGroup?, savedInstanceState: Bundle?) =
-            inflater!!.inflate(R.layout.fragment_settings, container, false)
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?) =
+            inflater.inflate(R.layout.fragment_settings, container, false)
 
-    override fun onViewCreated(view: View?, savedInstanceState: Bundle?) {
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 
-        ic_lock.setImageResource(R.drawable.ic_lock)
-        telemetryButton.isChecked = DataUploadPreference.isEnabled(activity)
+        lockIcon.setImageResource(R.drawable.ic_lock)
+        telemetryButton.isChecked = DataUploadPreference.isEnabled(requireContext())
         telemetryView.setOnClickListener { view ->
-            val newTelemetryState = !DataUploadPreference.isEnabled(activity)
-            DataUploadPreference.setIsEnabled(activity, newTelemetryState)
+            val newTelemetryState = !DataUploadPreference.isEnabled(requireContext())
+            DataUploadPreference.setIsEnabled(requireContext(), newTelemetryState)
             telemetryButton.isChecked = newTelemetryState
         }
 
         deleteButton.setOnClickListener { view ->
-            val builder1 = AlertDialog.Builder(activity)
+            val builder1 = AlertDialog.Builder(requireContext())
             builder1.setTitle(R.string.settings_cookies_dialog_title)
             builder1.setMessage(R.string.settings_cookies_dialog_content)
             builder1.setCancelable(true)
@@ -63,23 +75,23 @@ class SettingsFragment : Fragment() {
         }
 
         aboutButton.setOnClickListener {
-            startActivity(InfoActivity.getAboutIntent(context))
+            startActivity(InfoActivity.getAboutIntent(requireContext()))
         }
 
         privacyNoticeButton.setOnClickListener {
-            startActivity(InfoActivity.getPrivacyNoticeIntent(context))
+            startActivity(InfoActivity.getPrivacyNoticeIntent(requireContext()))
         }
     }
 
     override fun onStart() {
         super.onStart()
-        context.getAccessibilityManager().addTouchExplorationStateChangeListener(voiceViewStateChangeListener)
+        requireContext().getAccessibilityManager().addTouchExplorationStateChangeListener(voiceViewStateChangeListener)
         updateForAccessibility()
     }
 
     override fun onStop() {
         super.onStop()
-        context.getAccessibilityManager().removeTouchExplorationStateChangeListener(voiceViewStateChangeListener)
+        requireContext().getAccessibilityManager().removeTouchExplorationStateChangeListener(voiceViewStateChangeListener)
     }
 
     /**
@@ -95,7 +107,7 @@ class SettingsFragment : Fragment() {
         // cleared from this setting and nothing is selected. This is fine: the user can press
         // left-right to focus something else and it's an edge case that I don't think it is worth
         // adding code to fix.
-        val shouldFocus = !context.isVoiceViewEnabled()
+        val shouldFocus = !requireContext().isVoiceViewEnabled()
         telemetryView.isFocusable = shouldFocus
         if (!shouldFocus) { telemetryView.clearFocus() }
     }

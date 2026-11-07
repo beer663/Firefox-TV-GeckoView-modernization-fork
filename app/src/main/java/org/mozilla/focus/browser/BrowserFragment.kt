@@ -16,7 +16,7 @@ import android.widget.FrameLayout
 import kotlinx.android.synthetic.main.fragment_browser.*
 import kotlinx.android.synthetic.main.fragment_browser.view.*
 import org.mozilla.focus.MainActivity
-import org.mozilla.focus.R
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.ScreenController
 import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.cursor.CursorController

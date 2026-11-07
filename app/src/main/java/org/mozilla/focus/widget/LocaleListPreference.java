@@ -13,7 +13,7 @@ import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
 
-import org.mozilla.focus.R;
+import org.mozilla.tv.firefox.R;
 import org.mozilla.focus.locale.LocaleManager;
 import org.mozilla.focus.locale.Locales;
 

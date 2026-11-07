@@ -17,7 +17,7 @@ import android.util.AttributeSet;
 import android.view.View;
 
 import org.mozilla.focus.MainActivity;
-import org.mozilla.focus.R;
+import org.mozilla.tv.firefox.R;
 import org.mozilla.focus.locale.Locales;
 import org.mozilla.focus.iwebview.IWebView;
 import org.mozilla.focus.iwebview.WebViewProvider;

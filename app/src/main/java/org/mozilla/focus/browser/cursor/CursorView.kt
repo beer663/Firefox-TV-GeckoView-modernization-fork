@@ -12,7 +12,7 @@ import androidx.annotation.UiThread
 import android.util.AttributeSet
 import android.view.KeyEvent
 import android.widget.ImageView
-import org.mozilla.focus.R
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.utils.RemoteKey
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
@@ -83,7 +83,7 @@ class CursorView(context: Context, attrs: AttributeSet) : ImageView(context, att
 private class CursorHideHandler(view: CursorView) : Handler(Looper.getMainLooper()) {
     private val viewWeakReference = WeakReference<CursorView>(view)
 
-    override fun handleMessage(msg: Message?) {
+    override fun handleMessage(msg: Message) {
         viewWeakReference.get()
                 ?.animate()
                 ?.setDuration(HIDE_ANIMATION_DURATION_MILLIS)

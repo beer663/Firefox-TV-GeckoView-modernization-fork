@@ -19,7 +19,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.mozilla.focus.R;
+import org.mozilla.tv.firefox.R;
 
 import java.lang.ref.WeakReference;
 

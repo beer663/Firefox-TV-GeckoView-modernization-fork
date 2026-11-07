@@ -19,9 +19,8 @@ import android.net.Uri
  * Spec: https://github.com/mozilla-mobile/focus-android/issues/1231#issuecomment-326237077
  */
 fun Uri.truncatedHost(): String? {
-    if (host.isNullOrEmpty()) {
-        return host
-    }
+    val hostName = host ?: return null
+    if (hostName.isEmpty()) return hostName
 
     // We start with the host name:
     // * Pick the last two segments:
@@ -30,7 +29,7 @@ fun Uri.truncatedHost(): String? {
     //   www.tomshardware.co.uk -> tomshardware.co.uk
     // * If there's no host then just remove the URL as is.
 
-    val hostSegments = host.split(".")
+    val hostSegments = hostName.split(".")
     val usedHostSegments = mutableListOf<String>()
 
     for (segment in hostSegments.reversed()) {

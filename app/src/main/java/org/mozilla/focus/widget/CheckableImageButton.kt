@@ -5,6 +5,8 @@
 
 package org.mozilla.focus.widget
 
+import org.mozilla.tv.firefox.R
+
 import android.content.Context
 import android.util.AttributeSet
 import android.view.View

@@ -5,6 +5,8 @@
 
 package org.mozilla.focus
 
+import org.mozilla.tv.firefox.R
+
 import android.content.Context
 import androidx.fragment.app.FragmentManager
 import android.text.TextUtils

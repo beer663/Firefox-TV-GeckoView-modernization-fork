@@ -9,10 +9,13 @@ import android.os.SystemClock
 import androidx.annotation.UiThread
 import androidx.core.math.MathUtils
 import android.view.MotionEvent
-import kotlinx.coroutines.experimental.Deferred
-import kotlinx.coroutines.experimental.android.UI
-import kotlinx.coroutines.experimental.async
-import kotlinx.coroutines.experimental.delay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import org.mozilla.focus.ext.use
 import org.mozilla.focus.utils.Direction
 import java.util.EnumSet
@@ -71,6 +74,7 @@ class CursorViewModel(
 
     private val pressedDirections = EnumSet.noneOf(Direction::class.java)
 
+    private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var updateLoop: Deferred<Unit>? = null
 
     private fun update(deltaMillis: Long) {
@@ -134,14 +138,14 @@ class CursorViewModel(
     }
 
     // TODO: stop when new views (e.g. overlay) are opened.
-    private fun asyncStartUpdates() = async(UI) { // Use UI to avoid synchronization.
+    private fun asyncStartUpdates() = updateScope.async { // Use UI to avoid synchronization.
         var currentFrameMillis = SystemClock.uptimeMillis() // duped in loop.
         var prevFrameMillis: Long
         var deltaMillis = UPDATE_DELAY_MILLIS // Move ~1 frame to start.
         while (isActive) {
             update(deltaMillis)
 
-            delay(UPDATE_DELAY_MILLIS, TimeUnit.MILLISECONDS)
+            delay(UPDATE_DELAY_MILLIS)
 
             prevFrameMillis = currentFrameMillis
             currentFrameMillis = SystemClock.uptimeMillis() // duped in init.

@@ -15,8 +15,9 @@ import android.os.Message
 import android.view.View
 import android.view.View.GONE
 import android.widget.LinearLayout
-import kotlinx.android.synthetic.main.firefox_progress_bar.view.*
-import org.mozilla.focus.R
+import android.widget.TextView
+import android.widget.ImageView
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.architecture.NonNullObserver
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
@@ -30,9 +31,11 @@ class FirefoxProgressBar @JvmOverloads constructor(
     : LinearLayout(context, attrs, defStyle) {
 
     private val hideHandler = FirefoxProgressBarHideHandler(this)
+    private val urlText get() = findViewById<TextView>(R.id.url)
+    private val progressAnimation get() = findViewById<ImageView>(R.id.progressAnimation)
 
     fun initialize(browserFrag: BrowserFragment) {
-        browserFrag.session.url.observe(browserFrag, Observer { sessionUrl -> url.text = sessionUrl })
+        browserFrag.session.url.observe(browserFrag, Observer { sessionUrl -> urlText.text = sessionUrl })
         browserFrag.session.loading.observe(browserFrag, object : NonNullObserver<Boolean>() {
             public override fun onValueChanged(loading: Boolean) {
                 if (loading) {
@@ -75,13 +78,13 @@ class FirefoxProgressBar @JvmOverloads constructor(
 private class FirefoxProgressBarHideHandler(view: FirefoxProgressBar) : Handler(Looper.getMainLooper()) {
     private val viewWeakReference = WeakReference<FirefoxProgressBar>(view)
 
-    override fun handleMessage(msg: Message?) {
+    override fun handleMessage(msg: Message) {
         val progressBar = viewWeakReference.get()
         progressBar
                 ?.animate()
                 ?.withEndAction {
                     progressBar.visibility = GONE
-                    (progressBar.progressAnimation.background as AnimationDrawable).stop()
+                    (progressBar.findViewById<ImageView>(R.id.progressAnimation).background as? AnimationDrawable)?.stop()
                 }
                 ?.setDuration(HIDE_ANIMATION_DURATION_MILLIS)
                 ?.alpha(0f)

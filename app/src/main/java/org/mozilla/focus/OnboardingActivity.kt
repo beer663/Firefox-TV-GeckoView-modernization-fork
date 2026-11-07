@@ -4,12 +4,14 @@
 
 package org.mozilla.focus
 
+import org.mozilla.tv.firefox.R
+
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.preference.PreferenceManager
 import androidx.appcompat.app.AppCompatActivity
-import kotlinx.android.synthetic.main.content_onboarding.*
+import android.widget.Button
 import org.mozilla.focus.iwebview.IWebView
 
 class OnboardingActivity : AppCompatActivity() {
@@ -18,12 +20,12 @@ class OnboardingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_onboarding)
 
-        enable_turbo_mode.setOnClickListener { _ ->
+        findViewById<Button>(R.id.enable_turbo_mode).setOnClickListener { _ ->
             setTurboMode(true)
             finish()
         }
 
-        disable_turbo_mode.setOnClickListener { _ ->
+        findViewById<Button>(R.id.disable_turbo_mode).setOnClickListener { _ ->
             setTurboMode(false)
             setResult(Activity.RESULT_OK, Intent())
             finish()

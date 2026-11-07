@@ -107,7 +107,7 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
     }
 
     override fun applyLocale() {
-        val context = requireContext()
+        val context = context
         val localeManager = LocaleManager.getInstance()
         if (!localeManager.isMirroringSystemLocale(context)) {
             val currentLocale = localeManager.getCurrentLocale(context)
@@ -120,7 +120,7 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
         }
         // We create and destroy a new WebView here to force the internal state of WebView to know
         // about the new language. See focus-android issue #666.
-        val unneeded = WebView(requireContext())
+        val unneeded = WebView(getContext())
         unneeded.destroy()
     }
 }

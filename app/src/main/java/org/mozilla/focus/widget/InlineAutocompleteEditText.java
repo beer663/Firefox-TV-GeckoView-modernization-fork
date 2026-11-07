@@ -29,7 +29,7 @@ import android.view.inputmethod.InputConnectionWrapper;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.TextView;
 
-import org.mozilla.focus.R;
+import org.mozilla.tv.firefox.R;
 import org.mozilla.focus.utils.UrlUtils;
 import org.mozilla.focus.utils.ViewUtils;
 

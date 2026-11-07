@@ -13,7 +13,7 @@ import android.net.Uri;
 import androidx.annotation.StringRes;
 import androidx.appcompat.app.AlertDialog;
 
-import org.mozilla.focus.R;
+import org.mozilla.tv.firefox.R;
 import org.mozilla.focus.iwebview.IWebView;
 
 import java.net.URISyntaxException;

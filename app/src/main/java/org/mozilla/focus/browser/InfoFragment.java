@@ -12,7 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ProgressBar;
 
-import org.mozilla.focus.R;
+import org.mozilla.tv.firefox.R;
 import org.mozilla.focus.session.NullSession;
 import org.mozilla.focus.session.Session;
 import org.mozilla.focus.iwebview.IWebView;

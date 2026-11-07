@@ -11,7 +11,7 @@ import android.view.View
 
 import com.amazon.android.webkit.AmazonWebView
 
-import org.mozilla.focus.R
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.locale.Locales
 import org.mozilla.focus.utils.HtmlLoader
 
