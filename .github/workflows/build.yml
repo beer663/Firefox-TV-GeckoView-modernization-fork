@@ -1,4 +1,4 @@
-name: Build Firefox TV
+name: Build Firefox TV (Gecko only)
 
 on:
   workflow_dispatch:
@@ -8,11 +8,7 @@ on:
       - '**'
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        engine: [system, gecko]
+  build-gecko:
     runs-on: ubuntu-latest
 
     steps:
@@ -36,18 +32,13 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build ${{ matrix.engine }} debug APK
-        run: |
-          if [ "${{ matrix.engine }}" = "gecko" ]; then
-            bash ./gradlew :app:assembleGeckoDebug --stacktrace
-          else
-            bash ./gradlew :app:assembleSystemDebug --stacktrace
-          fi
+      - name: Build Gecko debug APK
+        run: bash ./gradlew :app:assembleGeckoDebug --stacktrace
 
-      - name: Save APK
+      - name: Save Gecko APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Firefox-TV-${{ matrix.engine }}-debug-APK
-          path: app/build/outputs/apk/${{ matrix.engine }}/debug/*.apk
+          name: Firefox-TV-Gecko-debug-APK
+          path: app/build/outputs/apk/gecko/debug/*.apk
           if-no-files-found: error
