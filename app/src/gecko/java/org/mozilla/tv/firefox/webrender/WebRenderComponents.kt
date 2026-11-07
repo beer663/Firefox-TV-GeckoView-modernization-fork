@@ -14,8 +14,6 @@ import mozilla.components.support.utils.SafeIntent
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.tv.firefox.R
-import org.mozilla.tv.firefox.utils.BuildConstants
-import org.mozilla.tv.firefox.utils.Settings
 
 /**
  * Helper class for lazily instantiating and keeping references to components needed by the
@@ -36,29 +34,14 @@ class WebRenderComponents(applicationContext: Context, systemUserAgent: String) 
     }
 
     val engine: Engine by lazy {
-        fun getUserAgent(): String = UserAgent.buildUserAgentString(
-                applicationContext,
-                systemUserAgent = systemUserAgent,
-                appName = applicationContext.resources.getString(R.string.useragent_appname))
-
         val runtimeSettingsBuilder = GeckoRuntimeSettings.Builder()
-        if (BuildConstants.isDevBuild) {
-            // In debug builds, allow to invoke via an Intent that has extras customizing Gecko.
-            // In particular, this allows to add command line arguments for custom profiles, etc.
-            val extras = launchSafeIntent?.extras
-            if (extras != null) {
-                runtimeSettingsBuilder.extras(extras)
-            }
-        }
         runtimeSettingsBuilder.autoplayDefault(GeckoRuntimeSettings.AUTOPLAY_DEFAULT_ALLOWED)
 
         val runtime = GeckoRuntime.create(applicationContext,
                 runtimeSettingsBuilder.build())
 
         GeckoEngine(applicationContext, DefaultSettings(
-                trackingProtectionPolicy = Settings.getInstance(applicationContext).trackingProtectionPolicy,
-                requestInterceptor = CustomContentRequestInterceptor(applicationContext),
-                userAgentString = getUserAgent(),
+                userAgentString = systemUserAgent,
 
                 displayZoomControls = false,
                 loadWithOverviewMode = true, // To respect the html viewport
@@ -68,7 +51,7 @@ class WebRenderComponents(applicationContext: Context, systemUserAgent: String) 
                 allowFileAccess = false,
                 allowContentAccess = false,
 
-                remoteDebuggingEnabled = BuildConstants.isDevBuild,
+                remoteDebuggingEnabled = false,
 
                 mediaPlaybackRequiresUserGesture = false // Allows auto-play (which improves YouTube experience).
         ), runtime)

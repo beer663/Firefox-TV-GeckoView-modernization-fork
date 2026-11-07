@@ -13,13 +13,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import kotlinx.android.synthetic.main.fragment_browser.*
-import kotlinx.android.synthetic.main.fragment_browser.view.*
 import org.mozilla.focus.MainActivity
 import org.mozilla.tv.firefox.R
 import org.mozilla.focus.ScreenController
 import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.cursor.CursorController
+import org.mozilla.focus.browser.cursor.CursorView
 import org.mozilla.focus.ext.isVisible
 import org.mozilla.focus.ext.toUri
 import org.mozilla.focus.home.BundledTilesManager
@@ -74,6 +73,13 @@ class BrowserFragment : IWebViewLifecycleFragment() {
      * Encapsulates the cursor's components. If this value is null, the Cursor is not attached
      * to the view hierarchy.
      */
+    internal val browserOverlay: BrowserNavigationOverlay
+        get() = requireView().findViewById(R.id.browserOverlay)
+    private val browserContainer: View
+        get() = requireView().findViewById(R.id.browserContainer)
+    private val videoContainer: FrameLayout
+        get() = requireView().findViewById(R.id.videoContainer)
+
     var cursor: CursorController? = null
         @UiThread get set // Set from the UI thread so serial access is required for simplicity.
 
@@ -86,7 +92,7 @@ class BrowserFragment : IWebViewLifecycleFragment() {
     }
 
     private fun initSession() {
-        val sessionUUID = arguments.getString(ARGUMENT_SESSION_UUID)
+        val sessionUUID = requireArguments().getString(ARGUMENT_SESSION_UUID)
                 ?: throw IllegalAccessError("No session exists")
         session = if (sessionManager.hasSessionWithUUID(sessionUUID))
             sessionManager.getSessionByUUID(sessionUUID)
@@ -98,8 +104,8 @@ class BrowserFragment : IWebViewLifecycleFragment() {
         session.loading.observe(this, object : NonNullObserver<Boolean>() {
             public override fun onValueChanged(loading: Boolean) {
                 // Update state on load start and finish to ensure buttons are updated correctly
-                if (browserOverlay.isVisible) {
-                    browserOverlay.updateOverlayForCurrentState()
+                view?.findViewById<BrowserNavigationOverlay>(R.id.browserOverlay)?.let { overlay ->
+                    if (overlay.isVisible) overlay.updateOverlayForCurrentState()
                 }
             }
         })
@@ -111,8 +117,8 @@ class BrowserFragment : IWebViewLifecycleFragment() {
             NavigationEvent.BACK -> if (webView?.canGoBack() ?: false) webView?.goBack()
             NavigationEvent.FORWARD -> if (webView?.canGoForward() ?: false) webView?.goForward()
             NavigationEvent.TURBO, NavigationEvent.RELOAD -> webView?.reload()
-            NavigationEvent.HOME -> ScreenController.showHomeScreen(fragmentManager, activity as OnUrlEnteredListener)
-            NavigationEvent.SETTINGS -> ScreenController.showSettingsScreen(fragmentManager)
+            NavigationEvent.HOME -> ScreenController.showHomeScreen(parentFragmentManager, requireActivity() as OnUrlEnteredListener)
+            NavigationEvent.SETTINGS -> ScreenController.showSettingsScreen(parentFragmentManager)
             NavigationEvent.LOAD -> {
                 (activity as MainActivity).onTextInputUrlEntered(value!!, autocompleteResult!!, UrlTextInputLocation.MENU)
                 setOverlayVisibileByUser(false)
@@ -121,15 +127,15 @@ class BrowserFragment : IWebViewLifecycleFragment() {
                 this@BrowserFragment.url?.let { url ->
                     when (value) {
                         NavigationEvent.VAL_CHECKED -> {
-                            CustomTilesManager.getInstance(context).pinSite(context, url,
+                            CustomTilesManager.getInstance(requireContext()).pinSite(requireContext(), url,
                                     webView?.takeScreenshot())
-                            showCenteredTopToast(context, R.string.notification_pinned_site, 0, TOAST_Y_OFFSET)
+                            showCenteredTopToast(requireContext(), R.string.notification_pinned_site, 0, TOAST_Y_OFFSET)
                         }
                         NavigationEvent.VAL_UNCHECKED -> {
                             url.toUri()?.let {
-                                if (BundledTilesManager.getInstance(context).unpinSite(context, it)
-                                        || CustomTilesManager.getInstance(context).unpinSite(context, url)) {
-                                    showCenteredTopToast(context, R.string.notification_unpinned_site, 0, TOAST_Y_OFFSET)
+                                if (BundledTilesManager.getInstance(requireContext()).unpinSite(requireContext(), it)
+                                        || CustomTilesManager.getInstance(requireContext()).unpinSite(requireContext(), url)) {
+                                    showCenteredTopToast(requireContext(), R.string.notification_unpinned_site, 0, TOAST_Y_OFFSET)
                                 }
                             }
                         }
@@ -144,11 +150,11 @@ class BrowserFragment : IWebViewLifecycleFragment() {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val layout = inflater.inflate(R.layout.fragment_browser, container, false)
 
-        cursor = CursorController(this, cursorParent = layout.browserFragmentRoot,
-                view = layout.cursorView)
+        cursor = CursorController(this, cursorParent = layout.findViewById(R.id.browserFragmentRoot),
+                view = layout.findViewById<CursorView>(R.id.cursorView))
         lifecycle.addObserver(cursor!!)
 
-        with (layout.browserOverlay) {
+        with (layout.findViewById<BrowserNavigationOverlay>(R.id.browserOverlay)) {
             onNavigationEvent = this@BrowserFragment.onNavigationEvent
             navigationStateProvider = NavigationStateProvider()
             visibility = overlayVisibleCached ?: View.GONE
@@ -159,16 +165,16 @@ class BrowserFragment : IWebViewLifecycleFragment() {
             }
         }
 
-        layout.progressBar.initialize(this)
+        layout.findViewById<FirefoxProgressBar>(R.id.progressBar).initialize(this)
 
         return layout
     }
 
     override fun onDestroyView() {
-        super.onDestroyView()
-        lifecycle.removeObserver(cursor!!)
+        overlayVisibleCached = view?.findViewById<BrowserNavigationOverlay>(R.id.browserOverlay)?.visibility
+        cursor?.let(lifecycle::removeObserver)
         cursor = null
-        overlayVisibleCached = browserOverlay.visibility
+        super.onDestroyView()
     }
 
     fun onBackPressed(): Boolean {
@@ -179,7 +185,7 @@ class BrowserFragment : IWebViewLifecycleFragment() {
             }
             browserOverlay.isVisible -> setOverlayVisibileByUser(false)
             else -> {
-                fragmentManager.popBackStack()
+                parentFragmentManager.popBackStack()
                 SessionManager.getInstance().removeCurrentSession()
             }
         }
@@ -226,7 +232,7 @@ class BrowserFragment : IWebViewLifecycleFragment() {
         if (!browserOverlay.isVisible && webView!!.isYoutubeTV &&
                 event.keyCode == KeyEvent.KEYCODE_BACK) {
             val escKeyEvent = KeyEvent(event.action, KeyEvent.KEYCODE_ESCAPE)
-            activity.dispatchKeyEvent(escKeyEvent)
+            requireActivity().dispatchKeyEvent(escKeyEvent)
             return true
         }
         return false
@@ -252,8 +258,8 @@ class BrowserFragment : IWebViewLifecycleFragment() {
         override fun getCurrentUrl() = url
         override fun isURLPinned() = url.toUri()?.let {
             // TODO: #569 fix CustomTilesManager to use Uri too
-            CustomTilesManager.getInstance(context).isURLPinned(it.toString()) ||
-                    BundledTilesManager.getInstance(context).isURLPinned(it) } ?: false
+            CustomTilesManager.getInstance(requireContext()).isURLPinned(it.toString()) ||
+                    BundledTilesManager.getInstance(requireContext()).isURLPinned(it) } ?: false
     }
 }
 
@@ -277,7 +283,12 @@ private class BrowserIWebViewCallback(
 
     override fun onEnterFullScreen(callback: IWebView.FullscreenCallback, view: View?) {
         fullscreenCallback = callback
-        if (view == null) return
+        if (view == null) {
+            // GeckoView renders fullscreen inside the existing engine view.
+            browserFragment.browserOverlay.visibility = View.GONE
+            browserFragment.cursor?.onPause()
+            return
+        }
 
         with (browserFragment) {
             // Hide browser UI and web content

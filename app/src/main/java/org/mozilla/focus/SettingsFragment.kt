@@ -54,7 +54,7 @@ class SettingsFragment : Fragment() {
         deleteButton.setOnClickListener { view ->
             val builder1 = AlertDialog.Builder(requireContext())
             builder1.setTitle(R.string.settings_cookies_dialog_title)
-            builder1.setMessage(R.string.settings_cookies_dialog_content)
+            builder1.setMessage(R.string.settings_cookies_dialog_content2)
             builder1.setCancelable(true)
 
             builder1.setPositiveButton(

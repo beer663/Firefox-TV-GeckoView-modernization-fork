@@ -15,8 +15,6 @@ import androidx.lifecycle.LifecycleObserver
 import androidx.lifecycle.OnLifecycleEvent
 import mozilla.components.browser.engine.gecko.GeckoEngineView
 import org.mozilla.tv.firefox.ext.canGoBackTwice
-import org.mozilla.tv.firefox.ext.webRenderComponents
-import org.mozilla.tv.firefox.session.SessionRepo
 
 /**
  * Caches a [GeckoEngineView], which internally maintains a [WebView].
@@ -24,7 +22,7 @@ import org.mozilla.tv.firefox.session.SessionRepo
  * This allows us to maintain [WebView] state when the view would otherwise
  * be destroyed
  */
-class EngineViewCache(private val sessionRepo: SessionRepo) : LifecycleObserver {
+class EngineViewCache(private val components: WebRenderComponents) : LifecycleObserver {
 
     companion object {
         // According to Android docs, WebView.saveState and WebView.restoreState do "not restore
@@ -63,7 +61,7 @@ class EngineViewCache(private val sessionRepo: SessionRepo) : LifecycleObserver 
 
         fun createAndCacheEngineView(): GeckoEngineView {
             // This will need to be updated for GeckoView.
-            val engineView = context.webRenderComponents.engine.createView(context, attrs) as GeckoEngineView
+            val engineView = components.engine.createView(context, attrs) as GeckoEngineView
             return engineView.apply {
                 initialize()
             }.also {
@@ -72,7 +70,6 @@ class EngineViewCache(private val sessionRepo: SessionRepo) : LifecycleObserver 
         }
 
         cachedView?.removeFromParentIfAble()
-        sessionRepo.canGoBackTwice = { cachedView?.canGoBackTwice() }
         return cachedView ?: createAndCacheEngineView()
     }
 
@@ -87,7 +84,6 @@ class EngineViewCache(private val sessionRepo: SessionRepo) : LifecycleObserver 
     }
 
     private fun clear() {
-        sessionRepo.canGoBackTwice = null
         cachedView?.onStop()
         cachedView?.onDestroy()
         cachedView = null

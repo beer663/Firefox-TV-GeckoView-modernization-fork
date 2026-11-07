@@ -11,7 +11,6 @@ import android.graphics.PointF
 import android.view.KeyEvent
 import android.view.View
 import android.view.accessibility.AccessibilityManager
-import kotlinx.android.synthetic.main.fragment_browser.*
 import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.BrowserFragment
 import org.mozilla.focus.ext.getAccessibilityManager
@@ -47,7 +46,7 @@ class CursorController(
     private val viewModel = CursorViewModel(onUpdate = { x, y, percentMaxScrollVel, framesPassed ->
         view.updatePosition(x, y)
         scrollWebView(percentMaxScrollVel, framesPassed)
-    }, simulateTouchEvent = { browserFragment.activity.dispatchTouchEvent(it) })
+    }, simulateTouchEvent = { browserFragment.requireActivity().dispatchTouchEvent(it) })
 
     val keyDispatcher = CursorKeyDispatcher(isEnabled, onDirectionKey = { dir, action ->
         when (action) {
@@ -71,13 +70,13 @@ class CursorController(
     /** Gets the current state of the browser and updates the cursor enabled state accordingly. */
     fun setEnabledForCurrentState() {
         // These sources have their own navigation controls.
-        isEnabled = !browserFragment.webView!!.isYoutubeTV && !browserFragment.context.isVoiceViewEnabled()
+        isEnabled = !browserFragment.webView!!.isYoutubeTV && !browserFragment.requireContext().isVoiceViewEnabled()
                 && !browserFragment.browserOverlay.isVisible
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_START)
     fun onStart() {
-        browserFragment.context.getAccessibilityManager().addTouchExplorationStateChangeListener(this)
+        browserFragment.requireContext().getAccessibilityManager().addTouchExplorationStateChangeListener(this)
         setEnabledForCurrentState() // VoiceView state may change.
 
         browserFragment.session.loading.observe(browserFragment, isLoadingObserver)
@@ -85,7 +84,7 @@ class CursorController(
 
     @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
     fun onStop() {
-        browserFragment.context.getAccessibilityManager().removeTouchExplorationStateChangeListener(this)
+        browserFragment.requireContext().getAccessibilityManager().removeTouchExplorationStateChangeListener(this)
 
         browserFragment.session.loading.removeObserver(isLoadingObserver)
     }

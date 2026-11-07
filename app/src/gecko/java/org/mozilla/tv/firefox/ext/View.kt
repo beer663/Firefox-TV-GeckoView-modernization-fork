@@ -14,7 +14,10 @@ import org.mozilla.geckoview.GeckoView
 fun View.validateKnownViewById(): Int {
     if (this.id == View.NO_ID) {
         when (this) {
-            is GeckoView -> return ENGINE_VIEW_ID
+            is GeckoView -> {
+                this.id = View.generateViewId()
+                return this.id
+            }
             else -> {
                 // TODO: need sentry/telemetry to keep track of what views without IDs get passed in
             }

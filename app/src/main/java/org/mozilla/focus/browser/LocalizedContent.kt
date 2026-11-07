@@ -9,7 +9,8 @@ import androidx.collection.ArrayMap
 import androidx.core.view.ViewCompat
 import android.view.View
 
-import com.amazon.android.webkit.AmazonWebView
+import org.mozilla.focus.iwebview.IWebView
+import android.net.Uri
 
 import org.mozilla.tv.firefox.R
 import org.mozilla.focus.locale.Locales
@@ -21,7 +22,7 @@ object LocalizedContent {
     const val URL_ABOUT = "firefox:about"
 
     @JvmStatic
-    fun handleInternalContent(url: String, webView: AmazonWebView): Boolean {
+    fun handleInternalContent(url: String, webView: IWebView): Boolean {
         if (URL_ABOUT == url) {
             loadAbout(webView)
             return true
@@ -32,8 +33,8 @@ object LocalizedContent {
     /**
      * Load the content for focus:about
      */
-    private fun loadAbout(webView: AmazonWebView) {
-        val context = webView.context
+    private fun loadAbout(webView: IWebView) {
+        val context = (webView as View).context
         val resources = Locales.getLocalizedResources(context)
 
         val substitutionMap = ArrayMap<String, String>()
@@ -80,12 +81,12 @@ object LocalizedContent {
 
         val data = HtmlLoader.loadResourceFile(context, R.raw.about, substitutionMap)
         // We use a file:/// base URL so that we have the right origin to load file:/// css and image resources.
-        webView.loadDataWithBaseURL("file:///android_asset/about.html", data, "text/html", "UTF-8", null)
+        webView.loadUrl("data:text/html;charset=utf-8," + Uri.encode(data))
     }
 
-    private fun putLayoutDirectionIntoMap(webView: AmazonWebView, substitutionMap: MutableMap<String, String>) {
-        ViewCompat.setLayoutDirection(webView, View.LAYOUT_DIRECTION_LOCALE)
-        val layoutDirection = ViewCompat.getLayoutDirection(webView)
+    private fun putLayoutDirectionIntoMap(webView: IWebView, substitutionMap: MutableMap<String, String>) {
+        ViewCompat.setLayoutDirection(webView as View, View.LAYOUT_DIRECTION_LOCALE)
+        val layoutDirection = ViewCompat.getLayoutDirection(webView as View)
 
         val direction: String
 

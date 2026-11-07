@@ -8,7 +8,6 @@ package org.mozilla.focus.iwebview
 import android.os.Bundle
 import androidx.annotation.UiThread
 import android.view.View
-import android.webkit.WebView
 import org.mozilla.tv.firefox.R
 import org.mozilla.focus.locale.LocaleAwareFragment
 import org.mozilla.focus.locale.LocaleManager
@@ -107,7 +106,7 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
     }
 
     override fun applyLocale() {
-        val context = context
+        val context = requireContext()
         val localeManager = LocaleManager.getInstance()
         if (!localeManager.isMirroringSystemLocale(context)) {
             val currentLocale = localeManager.getCurrentLocale(context)
@@ -118,9 +117,7 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
             config.setLocale(currentLocale)
             resources.updateConfiguration(config, null)
         }
-        // We create and destroy a new WebView here to force the internal state of WebView to know
-        // about the new language. See focus-android issue #666.
-        val unneeded = WebView(getContext())
-        unneeded.destroy()
+        // GeckoView updates locale through its own runtime. Do not instantiate
+        // Android System WebView merely for a legacy locale workaround.
     }
 }

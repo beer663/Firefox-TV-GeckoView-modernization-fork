@@ -13,14 +13,10 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
-import android.util.AttributeSet;
 import android.view.View;
 
-import org.mozilla.focus.MainActivity;
 import org.mozilla.tv.firefox.R;
 import org.mozilla.focus.locale.Locales;
-import org.mozilla.focus.iwebview.IWebView;
-import org.mozilla.focus.iwebview.WebViewProvider;
 
 /**
  * A generic activity that supports showing additional information in a WebView. This is useful
@@ -83,17 +79,4 @@ public class InfoActivity extends AppCompatActivity {
         });
     }
 
-    @Override
-    public View onCreateView(String name, Context context, AttributeSet attrs) {
-        if (name.equals(IWebView.class.getName())) {
-            final View view = WebViewProvider.create(this, attrs, MainActivity.getFactory());
-
-            final IWebView webView = (IWebView) view;
-            webView.setBlockingEnabled(false);
-
-            return view;
-        }
-
-        return super.onCreateView(name, context, attrs);
-    }
 }

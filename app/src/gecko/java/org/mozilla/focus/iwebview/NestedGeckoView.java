@@ -14,8 +14,7 @@ import androidx.core.view.NestedScrollingChild;
 import androidx.core.view.NestedScrollingChildHelper;
 import androidx.core.view.ViewCompat;
 
-import org.mozilla.gecko.GeckoView;
-import org.mozilla.gecko.GeckoViewSettings;
+import org.mozilla.geckoview.GeckoView;
 
 public class NestedGeckoView extends GeckoView implements NestedScrollingChild {
     private int mLastY;
@@ -24,8 +23,8 @@ public class NestedGeckoView extends GeckoView implements NestedScrollingChild {
     private int mNestedOffsetY;
     private NestedScrollingChildHelper mChildHelper;
 
-    public NestedGeckoView(Context context, AttributeSet attrs, GeckoViewSettings settings) {
-        super(context, attrs, settings);
+    public NestedGeckoView(Context context, AttributeSet attrs) {
+        super(context, attrs);
 
         mChildHelper = new NestedScrollingChildHelper(this);
         setNestedScrollingEnabled(true);

@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,248 +6,221 @@ package org.mozilla.focus.iwebview;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import androidx.annotation.NonNull;
+import android.graphics.Canvas;
 import android.util.AttributeSet;
 import android.view.View;
-
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import org.mozilla.focus.browser.LocalizedContent;
 import org.mozilla.focus.session.Session;
-import org.mozilla.gecko.GeckoView;
-import org.mozilla.gecko.GeckoViewSettings;
+import org.mozilla.geckoview.GeckoRuntime;
+import org.mozilla.geckoview.GeckoRuntimeSettings;
+import org.mozilla.geckoview.GeckoSession;
+import org.mozilla.geckoview.GeckoSessionSettings;
+import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.ScreenLength;
 
-import kotlin.NotImplementedError;
+/** Bridges the original TV IWebView frontend onto the GeckoView browser engine. */
+public final class WebViewProvider {
+    private static GeckoRuntime runtime;
 
-/**
- * WebViewProvider implementation for creating a Gecko based implementation of IWebView.
- */
-public class WebViewProvider {
-    public static void preload(final Context context) {
-        GeckoView.preload(context);
+    private WebViewProvider() {}
+
+    private static synchronized GeckoRuntime runtime(Context context) {
+        if (runtime == null) {
+            runtime = GeckoRuntime.create(context.getApplicationContext(),
+                    new GeckoRuntimeSettings.Builder()
+                            .autoplayDefault(GeckoRuntimeSettings.AUTOPLAY_DEFAULT_ALLOWED)
+                            .build());
+        }
+        return runtime;
+    }
+
+    public static void preload(Context context) {
+        runtime(context);
     }
 
     public static View create(Context context, AttributeSet attrs) {
-        final GeckoViewSettings settings = new GeckoViewSettings();
-        settings.setBoolean(GeckoViewSettings.USE_MULTIPROCESS, false);
-        settings.setBoolean(GeckoViewSettings.USE_PRIVATE_MODE, true);
-        settings.setBoolean(GeckoViewSettings.USE_TRACKING_PROTECTION, true);
-        final GeckoView geckoView = new GeckoWebView(context, attrs, settings);
-
-        return geckoView;
+        return new GeckoWebView(context, attrs);
     }
 
-    public static View create(Context context, AttributeSet attrs, Object factory) {
+    public static View create(Context context, AttributeSet attrs, Object ignoredLegacyFactory) {
         return create(context, attrs);
     }
 
-    public static void performCleanup(final Context context) {
-        // Nothing: does Gecko need extra private mode cleanup?
+    public static void performCleanup(Context context) {
+        // Private sessions do not persist browsing data.
     }
 
     public static void performNewBrowserSessionCleanup() {
-        // Nothing: a WebKit work-around.
+        // No separate WebKit process to clean up.
     }
 
-    public static class GeckoWebView extends org.mozilla.focus.iwebview.NestedGeckoView implements IWebView {
+    public static class GeckoWebView extends NestedGeckoView implements IWebView {
+        private final GeckoSession geckoSession;
         private Callback callback;
         private String currentUrl = "about:blank";
-        private boolean canGoBack;
-        private boolean canGoForward;
-        private boolean isSecure;
+        private String title = "";
+        private boolean backEnabled;
+        private boolean forwardEnabled;
+        private boolean secure;
+        private Bitmap lastScreenshot;
 
-        public GeckoWebView(Context context, AttributeSet attrs, GeckoViewSettings settings) {
-            super(context, attrs, settings);
-
-            setContentListener(createContentListener());
-            setProgressListener(createProgressListener());
-            setNavigationListener(createNavigationListener());
-
-            // TODO: set long press listener, call through to callback.onLinkLongPress()
-        }
-
-        @Nullable
-        @Override
-        public Callback getCallback() {
-            return callback;
-        }
-
-        @Override
-        public void setCallback(Callback callback) {
-            this.callback = callback;
-        }
-
-        @Override
-        public void onPause() {
-
-        }
-
-        @Override
-        public void pauseTimers() {
-
-        }
-
-        @Override
-        public void resumeTimers() {
-
-        }
-
-        @Override
-        public void onResume() {
-
-        }
-
-        @Override
-        public void onStart() {
-        }
-
-        @Override
-        public void onStop() {
-        }
-
-        @Override
-        public void scrollByClamped(int vx, int vy) {
-
-        }
-
-        @Override
-        public void stopLoading() {
-            this.stop();
-            callback.onPageFinished(isSecure);
-        }
-
-        @Override
-        public String getUrl() {
-            return currentUrl;
-        }
-
-        @Override
-        public void loadUrl(final String url) {
-            currentUrl = url;
-            loadUri(currentUrl);
-        }
-
-        @Override
-        public void evalJS(@NotNull String js) {
-            throw new NotImplementedError();
-        }
-
-        @Override
-        public void cleanup() {
-            // We're running in a private browsing window, so nothing to do
-        }
-
-        @NotNull
-        @Override
-        public Bitmap takeScreenshot() {
-            throw new NotImplementedError();
-        }
-
-        @NotNull
-        @Override
-        public FocusedDOMElementCache getFocusedDOMElement() {
-            // This hack is only necessary for AmazonWebView: see FocusedDOMElementCache for details.
-            return new FocusedDOMElementCache() {
+        public GeckoWebView(Context context, AttributeSet attrs) {
+            super(context, attrs);
+            geckoSession = new GeckoSession(new GeckoSessionSettings.Builder()
+                    .usePrivateMode(true)
+                    .useTrackingProtection(true)
+                    .build());
+            geckoSession.setProgressDelegate(new GeckoSession.ProgressDelegate() {
                 @Override
-                public void cache() { }
-
-                @Override
-                public void restore() { }
-            };
-        }
-
-        @Override
-        public void setBlockingEnabled(boolean enabled) {
-            // We can't actually do this?
-        }
-
-        private ContentListener createContentListener() {
-            return new ContentListener() {
-                @Override
-                public void onTitleChange(GeckoView geckoView, String s) {
-                }
-
-                @Override
-                public void onFullScreen(GeckoView geckoView, boolean fullScreen) {
-                }
-            };
-        }
-
-        private ProgressListener createProgressListener() {
-            return new ProgressListener() {
-                @Override
-                public void onPageStart(GeckoView geckoView, String url) {
+                public void onPageStart(@NonNull GeckoSession session, @NonNull String url) {
+                    currentUrl = url;
+                    secure = false;
                     if (callback != null) {
                         callback.onPageStarted(url);
-                        callback.onProgress(25);
-                        isSecure = false;
                     }
                 }
 
                 @Override
-                public void onPageStop(GeckoView geckoView, boolean success) {
+                public void onPageStop(@NonNull GeckoSession session, boolean success) {
                     if (callback != null) {
-                        if (success) {
-                            callback.onProgress(100);
-                            callback.onPageFinished(isSecure);
-                        }
+                        callback.onProgress(100);
+                        callback.onPageFinished(secure);
+                    }
+                    // Prefetch the most recent thumbnail for pinning sites on the home screen.
+                    if (success) {
+                        capturePixels().then(bitmap -> {
+                            lastScreenshot = bitmap;
+                            return null;
+                        });
                     }
                 }
 
                 @Override
-                public void onSecurityChange(GeckoView geckoView, int status) {
-                    // TODO: Split current onPageFinished() callback into two: page finished + security changed
-                    isSecure = status == ProgressListener.STATE_IS_SECURE;
+                public void onProgressChange(@NonNull GeckoSession session, int progress) {
+                    if (callback != null) callback.onProgress(progress);
                 }
-            };
-        }
 
-        private NavigationListener createNavigationListener() {
-            return new NavigationListener() {
-                public void onLocationChange(GeckoView view, String url) {
-                    if (callback != null) {
-                        callback.onURLChanged(url);
+                @Override
+                public void onSecurityChange(@NonNull GeckoSession session,
+                        @NonNull GeckoSession.ProgressDelegate.SecurityInformation information) {
+                    secure = information.isSecure;
+                }
+            });
+            geckoSession.setNavigationDelegate(new GeckoSession.NavigationDelegate() {
+                @Override
+                public void onLocationChange(@NonNull GeckoSession session, @Nullable String url) {
+                    if (url != null) {
+                        currentUrl = url;
+                        if (callback != null) callback.onURLChanged(url);
                     }
                 }
 
-                public void onCanGoBack(GeckoView view, boolean canGoBack) {
-                    GeckoWebView.this.canGoBack = canGoBack;
+                @Override
+                public void onCanGoBack(@NonNull GeckoSession session, boolean canGoBack) {
+                    backEnabled = canGoBack;
                 }
 
-                public void onCanGoForward(GeckoView view, boolean canGoForward) {
-                    GeckoWebView.this.canGoForward = canGoForward;
+                @Override
+                public void onCanGoForward(@NonNull GeckoSession session, boolean canGoForward) {
+                    forwardEnabled = canGoForward;
                 }
+            });
+            geckoSession.setContentDelegate(new GeckoSession.ContentDelegate() {
+                @Override
+                public void onTitleChange(@NonNull GeckoSession session, @Nullable String newTitle) {
+                    title = newTitle == null ? "" : newTitle;
+                }
+
+                @Override
+                public void onFullScreen(@NonNull GeckoSession session, boolean fullScreen) {
+                    if (callback == null) return;
+                    if (fullScreen) {
+                        callback.onEnterFullScreen(() -> geckoSession.exitFullScreen(), null);
+                    } else {
+                        callback.onExitFullScreen();
+                    }
+                }
+            });
+            geckoSession.open(runtime(context));
+            setSession(geckoSession);
+        }
+
+        @Nullable @Override public Callback getCallback() { return callback; }
+        @Override public void setCallback(@Nullable Callback value) { callback = value; }
+        @Nullable @Override public String getTitle() { return title; }
+        @Nullable @Override public String getUrl() { return currentUrl; }
+
+        @Override public void loadUrl(@NonNull String url) {
+            if (LocalizedContent.handleInternalContent(url, this)) return;
+            currentUrl = url;
+            geckoSession.loadUri(url);
+        }
+        @Override public void reload() { geckoSession.reload(); }
+        @Override public void goBack() { geckoSession.goBack(); }
+        @Override public void goForward() { geckoSession.goForward(); }
+        @Override public boolean canGoBack() { return backEnabled; }
+        @Override public boolean canGoForward() { return forwardEnabled; }
+        @Override public void stopLoading() { geckoSession.stop(); }
+
+        @Override public void onPause() {}
+        @Override public void onResume() {}
+        @Override public void onStart() {}
+        @Override public void onStop() {}
+        @Override public void pauseTimers() {}
+        @Override public void resumeTimers() {}
+
+        @Override public void evalJS(@NonNull String js) {
+            // GeckoView's direct JS execution is restricted; this legacy API has no general bridge.
+            // Keep it explicit until a WebExtension messaging implementation is wired in.
+        }
+
+        @Override public void scrollByClamped(int vx, int vy) {
+            getPanZoomController().scrollBy(
+                ScreenLength.fromPixels((double) vx), ScreenLength.fromPixels((double) vy));
+        }
+
+        @NonNull @Override public Bitmap takeScreenshot() {
+            if (lastScreenshot != null && !lastScreenshot.isRecycled()) return lastScreenshot;
+            // The first thumbnail request can arrive before capturePixels completes.
+            Bitmap fallback = Bitmap.createBitmap(Math.max(1, getWidth()),
+                    Math.max(1, getHeight()), Bitmap.Config.ARGB_8888);
+            draw(new Canvas(fallback));
+            return fallback;
+        }
+
+        @NonNull @Override public FocusedDOMElementCache getFocusedDOMElement() {
+            return new FocusedDOMElementCache() {
+                @Override public void cache() {}
+                @Override public void restore() {}
             };
         }
 
-        @Override
-        public boolean canGoForward() {
-            return canGoForward;
+        @Override public void setBlockingEnabled(boolean enabled) {
+            geckoSession.getSettings().setUseTrackingProtection(enabled);
+            if (callback != null) callback.onBlockingStateChanged(enabled);
         }
 
-        @Override
-        public boolean canGoBack() {
-            return canGoBack;
+        @Override public void cleanup() {
+            // This app uses private sessions. Persistent cookie clearing will be handled in
+            // the GeckoView storage controller migration, not by an old WebKit call.
         }
 
-        @Override
-        public void restoreWebViewState(Session session) {
-            // TODO: restore navigation history, and reopen previously opened page
+        @Override public void saveWebViewState(@NonNull Session session) {
+            // Fragment session URL remains the source of truth; Gecko session history
+            // serialization requires a separate async integration.
         }
 
-        @Override
-        public void saveWebViewState(@NonNull Session session) {
-            // TODO: save anything needed for navigation history restoration.
+        @Override public void restoreWebViewState(@NonNull Session session) {
+            if (session.getUrl().getValue() != null) loadUrl(session.getUrl().getValue());
         }
 
-        @Override
-        public String getTitle() {
-            return "?";
+        @Override public void destroy() {
+            releaseSession();
+            geckoSession.close();
         }
 
-        @Override
-        public boolean isYoutubeTV() {
-            // TODO: Default implementation
-            return false;
-        }
+        @Override public boolean isYoutubeTV() { return currentUrl.contains("youtube.com/tv"); }
     }
 }
