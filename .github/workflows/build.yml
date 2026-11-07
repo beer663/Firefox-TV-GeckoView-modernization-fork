@@ -32,6 +32,9 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Print resolved GeckoView runtime dependency
+        run: bash ./gradlew :app:dependencyInsight --configuration geckoDebugRuntimeClasspath --dependency org.mozilla.geckoview
+
       - name: Build Gecko debug APK
         run: bash ./gradlew :app:assembleGeckoDebug --stacktrace
 
@@ -42,3 +45,4 @@ jobs:
           name: Firefox-TV-Gecko-debug-APK
           path: app/build/outputs/apk/gecko/debug/*.apk
           if-no-files-found: error
+          retention-days: 1
