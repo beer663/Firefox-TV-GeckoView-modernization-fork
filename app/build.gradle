@@ -68,10 +68,21 @@ android {
     }
 
     sourceSets {
+        // The original Firefox TV project stores its shared source in app/main,
+        // not app/src/main. Keep the original files in place and tell Gradle
+        // where to find them instead of moving hundreds of files.
+        main {
+            java.srcDirs = ['main/java']
+            res.srcDirs = ['main/res']
+            assets.srcDirs = ['main/assets']
+            // Prefer the standard location when the manifest patch is present.
+            manifest.srcFile file('src/main/AndroidManifest.xml').exists()
+                ? 'src/main/AndroidManifest.xml'
+                : 'main/AndroidManifest.xml'
+        }
         test {
             resources {
-                // Make the default asset folder available as test resource folder.
-                srcDir "${projectDir}/src/main/assets/"
+                srcDir "${projectDir}/main/assets/"
             }
         }
     }
