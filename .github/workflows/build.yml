@@ -9,6 +9,10 @@ on:
 
 jobs:
   build:
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [system, gecko]
     runs-on: ubuntu-latest
 
     steps:
@@ -29,19 +33,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build System and Gecko debug APKs
-        run: ./gradlew :app:assembleSystemDebug :app:assembleGeckoDebug --stacktrace
+      - name: Build ${{ matrix.engine }} debug APK
+        run: |
+          if [ "${{ matrix.engine }}" = "gecko" ]; then
+            ./gradlew :app:assembleGeckoDebug --stacktrace
+          else
+            ./gradlew :app:assembleSystemDebug --stacktrace
+          fi
 
-      - name: Save System APK
+      - name: Save APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Firefox-TV-system-debug-APK
-          path: app/build/outputs/apk/system/debug/*.apk
-          if-no-files-found: error
-
-      - name: Save Gecko APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Firefox-TV-gecko-debug-APK
-          path: app/build/outputs/apk/gecko/debug/*.apk
+          name: Firefox-TV-${{ matrix.engine }}-debug-APK
+          path: app/build/outputs/apk/${{ matrix.engine }}/debug/*.apk
           if-no-files-found: error
