@@ -39,9 +39,9 @@ jobs:
       - name: Build ${{ matrix.engine }} debug APK
         run: |
           if [ "${{ matrix.engine }}" = "gecko" ]; then
-            ./gradlew :app:assembleGeckoDebug --stacktrace
+            bash ./gradlew :app:assembleGeckoDebug --stacktrace
           else
-            ./gradlew :app:assembleSystemDebug --stacktrace
+            bash ./gradlew :app:assembleSystemDebug --stacktrace
           fi
 
       - name: Save APK
