@@ -75,9 +75,9 @@ class BrowserFragment : IWebViewLifecycleFragment() {
      */
     internal val browserOverlay: BrowserNavigationOverlay
         get() = requireView().findViewById(R.id.browserOverlay)
-    private val browserContainer: View
+    internal val browserContainer: View
         get() = requireView().findViewById(R.id.browserContainer)
-    private val videoContainer: FrameLayout
+    internal val videoContainer: FrameLayout
         get() = requireView().findViewById(R.id.videoContainer)
 
     var cursor: CursorController? = null
