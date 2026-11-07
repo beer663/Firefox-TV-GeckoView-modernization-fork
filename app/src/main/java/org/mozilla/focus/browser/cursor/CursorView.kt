@@ -8,7 +8,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
-import android.support.annotation.UiThread
+import androidx.annotation.UiThread
 import android.util.AttributeSet
 import android.view.KeyEvent
 import android.widget.ImageView

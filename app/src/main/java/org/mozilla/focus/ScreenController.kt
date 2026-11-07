@@ -6,7 +6,7 @@
 package org.mozilla.focus
 
 import android.content.Context
-import android.support.v4.app.FragmentManager
+import androidx.fragment.app.FragmentManager
 import android.text.TextUtils
 import org.mozilla.focus.browser.BrowserFragment
 import org.mozilla.focus.home.HomeFragment

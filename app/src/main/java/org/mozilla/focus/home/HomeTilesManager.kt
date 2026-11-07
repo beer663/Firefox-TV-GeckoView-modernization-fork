@@ -10,8 +10,8 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.support.annotation.AnyThread
-import android.support.annotation.UiThread
+import androidx.annotation.AnyThread
+import androidx.annotation.UiThread
 import org.json.JSONArray
 import org.mozilla.focus.ext.toUri
 import org.mozilla.focus.utils.UrlUtils

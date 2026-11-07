@@ -7,9 +7,9 @@ package org.mozilla.focus.utils;
 
 import android.content.Context;
 import android.graphics.drawable.Drawable;
-import android.support.annotation.ColorInt;
-import android.support.annotation.DrawableRes;
-import android.support.annotation.NonNull;
+import androidx.annotation.ColorInt;
+import androidx.annotation.DrawableRes;
+import androidx.annotation.NonNull;
 import android.support.v4.graphics.drawable.DrawableCompat;
 
 public class DrawableUtils {

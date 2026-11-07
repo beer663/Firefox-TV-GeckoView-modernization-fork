@@ -7,8 +7,8 @@ package org.mozilla.focus.widget;
 
 import android.content.Context;
 import android.graphics.Rect;
-import android.support.annotation.NonNull;
-import android.support.v4.content.ContextCompat;
+import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import android.text.Editable;
 import android.text.NoCopySpan;
 import android.text.Selection;
@@ -33,7 +33,7 @@ import org.mozilla.focus.R;
 import org.mozilla.focus.utils.UrlUtils;
 import org.mozilla.focus.utils.ViewUtils;
 
-public class InlineAutocompleteEditText extends android.support.v7.widget.AppCompatEditText {
+public class InlineAutocompleteEditText extends androidx.appcompat.widget.AppCompatEditText {
     public interface OnCommitListener {
         void onCommit();
     }

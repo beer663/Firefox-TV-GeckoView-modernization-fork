@@ -4,7 +4,7 @@
 
 package org.mozilla.focus.browser.cursor
 
-import android.support.annotation.UiThread
+import androidx.annotation.UiThread
 import android.view.KeyEvent
 import org.mozilla.focus.utils.Direction
 import org.mozilla.focus.utils.RemoteKey

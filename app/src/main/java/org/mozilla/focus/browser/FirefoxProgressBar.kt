@@ -7,7 +7,7 @@ package org.mozilla.focus.browser
 import android.content.Context
 import android.util.AttributeSet
 import android.view.LayoutInflater
-import android.arch.lifecycle.Observer
+import androidx.lifecycle.Observer
 import android.graphics.drawable.AnimationDrawable
 import android.os.Handler
 import android.os.Looper

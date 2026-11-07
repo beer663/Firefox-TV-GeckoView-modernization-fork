@@ -8,7 +8,7 @@ package org.mozilla.focus.telemetry
 import android.content.Context
 import android.net.http.SslError
 import android.os.StrictMode
-import android.support.annotation.UiThread
+import androidx.annotation.UiThread
 import org.mozilla.focus.BuildConfig
 import org.mozilla.focus.browser.NavigationEvent
 import org.mozilla.focus.home.BundledHomeTile

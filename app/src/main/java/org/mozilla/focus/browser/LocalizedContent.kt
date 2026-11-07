@@ -6,7 +6,7 @@ package org.mozilla.focus.browser
 
 import android.content.pm.PackageManager
 import android.support.v4.util.ArrayMap
-import android.support.v4.view.ViewCompat
+import androidx.core.view.ViewCompat
 import android.view.View
 
 import com.amazon.android.webkit.AmazonWebView

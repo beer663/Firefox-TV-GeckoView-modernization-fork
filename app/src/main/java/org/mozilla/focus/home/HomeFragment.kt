@@ -8,10 +8,10 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.graphics.Color
 import android.os.Bundle
-import android.support.v4.app.Fragment
-import android.support.v4.content.ContextCompat
-import android.support.v7.widget.GridLayoutManager
-import android.support.v7.widget.RecyclerView
+import androidx.fragment.app.Fragment
+import androidx.core.content.ContextCompat
+import androidx.appcompat.widget.GridLayoutManager
+import androidx.appcompat.widget.RecyclerView
 import android.util.TypedValue
 import android.view.ContextMenu
 import android.view.KeyEvent

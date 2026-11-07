@@ -4,9 +4,9 @@
 
 package org.mozilla.focus.browser.cursor
 
-import android.arch.lifecycle.Lifecycle
-import android.arch.lifecycle.LifecycleObserver
-import android.arch.lifecycle.OnLifecycleEvent
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleObserver
+import androidx.lifecycle.OnLifecycleEvent
 import android.graphics.PointF
 import android.view.KeyEvent
 import android.view.View
