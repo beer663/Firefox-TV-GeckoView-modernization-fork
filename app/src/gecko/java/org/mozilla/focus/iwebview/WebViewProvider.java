@@ -9,6 +9,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.util.AttributeSet;
 import android.view.View;
+import java.util.List;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import org.mozilla.focus.browser.LocalizedContent;
@@ -30,7 +31,6 @@ public final class WebViewProvider {
         if (runtime == null) {
             runtime = GeckoRuntime.create(context.getApplicationContext(),
                     new GeckoRuntimeSettings.Builder()
-                            .autoplayDefault(GeckoRuntimeSettings.AUTOPLAY_DEFAULT_ALLOWED)
                             .build());
         }
         return runtime;
@@ -116,7 +116,9 @@ public final class WebViewProvider {
             });
             geckoSession.setNavigationDelegate(new GeckoSession.NavigationDelegate() {
                 @Override
-                public void onLocationChange(@NonNull GeckoSession session, @Nullable String url) {
+                public void onLocationChange(@NonNull GeckoSession session, @Nullable String url,
+                        @NonNull List<GeckoSession.PermissionDelegate.ContentPermission> permissions,
+                        @NonNull Boolean hasUserGesture) {
                     if (url != null) {
                         currentUrl = url;
                         if (callback != null) callback.onURLChanged(url);
