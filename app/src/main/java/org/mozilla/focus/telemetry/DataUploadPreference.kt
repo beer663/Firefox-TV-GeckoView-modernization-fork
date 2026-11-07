@@ -11,7 +11,7 @@ import org.mozilla.tv.firefox.R
 import org.mozilla.focus.utils.AppConstants
 import org.mozilla.telemetry.TelemetryHolder
 
-private const val PREF_KEY_TELEMETRY = R.string.pref_key_telemetry
+private val PREF_KEY_TELEMETRY = R.string.pref_key_telemetry
 
 /** A data container for for the "Send usage data" preference the user can switch. */
 internal object DataUploadPreference {

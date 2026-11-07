@@ -9,7 +9,7 @@ import android.os.Bundle
 import androidx.annotation.UiThread
 import android.view.View
 import android.webkit.WebView
-import org.mozilla.focus.R
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.locale.LocaleAwareFragment
 import org.mozilla.focus.locale.LocaleManager
 import org.mozilla.focus.session.Session
@@ -107,7 +107,7 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
     }
 
     override fun applyLocale() {
-        val context = context
+        val context = requireContext()
         val localeManager = LocaleManager.getInstance()
         if (!localeManager.isMirroringSystemLocale(context)) {
             val currentLocale = localeManager.getCurrentLocale(context)
@@ -120,7 +120,7 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
         }
         // We create and destroy a new WebView here to force the internal state of WebView to know
         // about the new language. See focus-android issue #666.
-        val unneeded = WebView(getContext())
+        val unneeded = WebView(requireContext())
         unneeded.destroy()
     }
 }

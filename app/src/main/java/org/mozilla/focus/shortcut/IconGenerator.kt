@@ -12,7 +12,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import android.util.TypedValue
-import org.mozilla.focus.R
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.utils.UrlUtils
 
 class IconGenerator {
