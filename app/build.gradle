@@ -67,25 +67,8 @@ android {
         execution 'ANDROIDX_TEST_ORCHESTRATOR'
     }
 
-    sourceSets {
-        // The original Firefox TV project stores its shared source in app/main,
-        // not app/src/main. Keep the original files in place and tell Gradle
-        // where to find them instead of moving hundreds of files.
-        main {
-            java.srcDirs = ['main/java']
-            res.srcDirs = ['main/res']
-            assets.srcDirs = ['main/assets']
-            // Prefer the standard location when the manifest patch is present.
-            manifest.srcFile file('src/main/AndroidManifest.xml').exists()
-                ? 'src/main/AndroidManifest.xml'
-                : 'main/AndroidManifest.xml'
-        }
-        test {
-            resources {
-                srcDir "${projectDir}/main/assets/"
-            }
-        }
-    }
+    // Standard Android source layout: app/src/main/{java,res,assets}.
+    // Engine-specific sources remain in app/src/gecko and app/src/system.
 
     packaging {
         resources {
