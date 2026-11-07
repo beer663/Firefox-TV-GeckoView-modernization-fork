@@ -11,8 +11,10 @@ import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.LinearLayout
-import kotlinx.android.synthetic.main.browser_overlay.view.*
-import org.mozilla.focus.R
+import android.widget.ImageButton
+import android.widget.TextView
+import org.mozilla.focus.widget.CheckableImageButton
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.autocomplete.UrlAutoCompleteFilter
 import org.mozilla.focus.telemetry.TelemetryWrapper
 import org.mozilla.focus.utils.Settings
@@ -63,6 +65,16 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
         set(value) {
             Settings.getInstance(context).isBlockingEnabled = value
         }
+
+    private val navButtonBack: ImageButton by lazy { findViewById(R.id.navButtonBack) }
+    private val navButtonForward: ImageButton by lazy { findViewById(R.id.navButtonForward) }
+    private val navButtonReload: ImageButton by lazy { findViewById(R.id.navButtonReload) }
+    private val navButtonHome: ImageButton by lazy { findViewById(R.id.navButtonHome) }
+    private val navButtonSettings: ImageButton by lazy { findViewById(R.id.navButtonSettings) }
+    private val turboButton: CheckableImageButton by lazy { findViewById(R.id.turboButton) }
+    private val pinButton: CheckableImageButton by lazy { findViewById(R.id.pinButton) }
+    private val navCloseHint: TextView by lazy { findViewById(R.id.navCloseHint) }
+    private val navUrlInput: InlineAutocompleteEditText by lazy { findViewById(R.id.navUrlInput) }
 
     private var hasUserChangedURLSinceEditTextFocused = false
 
@@ -120,6 +132,7 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
                 value = if (isPinButtonChecked) NavigationEvent.VAL_CHECKED
                 else NavigationEvent.VAL_UNCHECKED
             }
+            else -> Unit
         }
         onNavigationEvent?.invoke(event, value, null)
         TelemetryWrapper.overlayClickEvent(event, isTurboButtonChecked, isPinButtonChecked)
