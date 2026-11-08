@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.preference.PreferenceManager;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
@@ -40,6 +41,7 @@ import org.mozilla.geckoview.WebExtension;
 /** Bridges the original TV IWebView frontend onto GeckoView. */
 public final class WebViewProvider {
     private static final String TAG = "TVGeckoAdapter";
+    private static final String DESKTOP_SITE_PREF = "desktop_site_mode";
     private static final String BRIDGE_ID =
             "tv-page-controls@firefox-tv.local";
 
@@ -68,6 +70,26 @@ public final class WebViewProvider {
 
     public static GeckoRuntime getRuntime(Context context) {
         return runtime(context);
+    }
+
+    public static boolean isDesktopModeEnabled(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(
+                context.getApplicationContext()
+        ).getBoolean(DESKTOP_SITE_PREF, true);
+    }
+
+    public static void setDesktopModeEnabled(
+            Context context,
+            boolean enabled) {
+        PreferenceManager.getDefaultSharedPreferences(
+                context.getApplicationContext()
+        ).edit()
+                .putBoolean(DESKTOP_SITE_PREF, enabled)
+                .apply();
+
+        for (GeckoWebView view : new ArrayList<>(liveViews)) {
+            view.applyDesktopMode(enabled);
+        }
     }
 
     public static void preload(Context context) {
@@ -135,6 +157,7 @@ public final class WebViewProvider {
         private GeckoSession.SessionState latestState;
         private Session boundSession;
         private boolean destroyed;
+        private boolean desktopMode;
         private boolean bridgeReady;
         private Runnable pendingNavigation;
         private WebExtension.Port pagePort;
@@ -310,6 +333,7 @@ public final class WebViewProvider {
                     if (pendingCommands.size() == 32) {
                         pendingCommands.remove(0);
                     }
+
                     pendingCommands.add(message);
                 }
             } catch (JSONException e) {
@@ -351,8 +375,18 @@ public final class WebViewProvider {
         public GeckoWebView(Context context, AttributeSet attrs) {
             super(context, attrs);
 
+            desktopMode = isDesktopModeEnabled(context);
+
             geckoSession = new GeckoSession(
                     new GeckoSessionSettings.Builder()
+                            .userAgentMode(
+                                    desktopMode
+                                            ? GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+                                            : GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+                            .viewportMode(
+                                    desktopMode
+                                            ? GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
+                                            : GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
                             .usePrivateMode(false)
                             .useTrackingProtection(false)
                             .build());
@@ -532,6 +566,33 @@ public final class WebViewProvider {
                     });
         }
 
+        private void applyDesktopMode(boolean enabled) {
+            if (destroyed || desktopMode == enabled) {
+                return;
+            }
+
+            desktopMode = enabled;
+
+            geckoSession.getSettings().setUserAgentMode(
+                    enabled
+                            ? GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+                            : GeckoSessionSettings.USER_AGENT_MODE_MOBILE);
+
+            geckoSession.getSettings().setViewportMode(
+                    enabled
+                            ? GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
+                            : GeckoSessionSettings.VIEWPORT_MODE_MOBILE);
+
+            if (
+                    bridgeReady
+                            && (
+                                    currentUrl.startsWith("https://")
+                                            || currentUrl.startsWith("http://"))) {
+                geckoSession.reload(
+                        GeckoSession.LOAD_FLAGS_BYPASS_CACHE);
+            }
+        }
+
         private void finishBridgeSetup() {
             bridgeReady = true;
 
@@ -637,6 +698,9 @@ public final class WebViewProvider {
 
         @Override
         public void onResume() {
+            applyDesktopMode(
+                    isDesktopModeEnabled(getContext()));
+
             diagnosticsForeground = true;
             updateDiagnosticsSampling();
 
