@@ -4,77 +4,123 @@
 
 package org.mozilla.focus
 
-import org.mozilla.tv.firefox.R
-
 import android.app.AlertDialog
 import android.content.DialogInterface
 import android.content.Intent
-import org.mozilla.focus.extensions.ExtensionsActivity
 import android.os.Bundle
-import androidx.fragment.app.Fragment
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
 import android.widget.CheckBox
 import android.widget.ImageView
-import org.mozilla.focus.iwebview.IWebView
+import android.widget.Toast
+import androidx.fragment.app.Fragment
+import org.mozilla.tv.firefox.R
 import org.mozilla.focus.browser.InfoActivity
 import org.mozilla.focus.ext.getAccessibilityManager
 import org.mozilla.focus.ext.isVoiceViewEnabled
+import org.mozilla.focus.extensions.ExtensionsActivity
+import org.mozilla.focus.iwebview.WebViewProvider
 import org.mozilla.focus.session.SessionManager
 import org.mozilla.focus.telemetry.DataUploadPreference
 import org.mozilla.focus.telemetry.TelemetryWrapper
 
-/** The settings for the app. */
 class SettingsFragment : Fragment() {
-    private val telemetryButton get() = requireView().findViewById<CheckBox>(R.id.telemetryButton)
-    private val telemetryView get() = requireView().findViewById<View>(R.id.telemetryView)
-    private val deleteButton get() = requireView().findViewById<View>(R.id.deleteButton)
-    private val extensionsButton get() = requireView().findViewById<View>(R.id.extensionsButton)
-    private val aboutButton get() = requireView().findViewById<View>(R.id.aboutButton)
-    private val privacyNoticeButton get() = requireView().findViewById<View>(R.id.privacyNoticeButton)
-    private val settingsWebView get() = requireView().findViewById<View>(R.id.settingsWebView) as IWebView
-    private val lockIcon get() = requireView().findViewById<ImageView>(R.id.ic_lock)
+    private val telemetryButton
+        get() = requireView().findViewById<CheckBox>(R.id.telemetryButton)
 
-    private val voiceViewStateChangeListener = AccessibilityManager.TouchExplorationStateChangeListener {
-        updateForAccessibility()
-    }
+    private val telemetryView
+        get() = requireView().findViewById<View>(R.id.telemetryView)
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?) =
-            inflater.inflate(R.layout.fragment_settings, container, false)
+    private val deleteButton
+        get() = requireView().findViewById<View>(R.id.deleteButton)
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+    private val extensionsButton
+        get() = requireView().findViewById<View>(R.id.extensionsButton)
 
-        lockIcon.setImageResource(R.drawable.ic_lock)
-        telemetryButton.isChecked = DataUploadPreference.isEnabled(requireContext())
-        telemetryView.setOnClickListener { view ->
-            val newTelemetryState = !DataUploadPreference.isEnabled(requireContext())
-            DataUploadPreference.setIsEnabled(requireContext(), newTelemetryState)
-            telemetryButton.isChecked = newTelemetryState
+    private val aboutButton
+        get() = requireView().findViewById<View>(R.id.aboutButton)
+
+    private val privacyNoticeButton
+        get() = requireView().findViewById<View>(R.id.privacyNoticeButton)
+
+    private val lockIcon
+        get() = requireView().findViewById<ImageView>(R.id.ic_lock)
+
+    private val voiceViewStateChangeListener =
+        AccessibilityManager.TouchExplorationStateChangeListener {
+            updateForAccessibility()
         }
 
-        deleteButton.setOnClickListener { view ->
-            val builder1 = AlertDialog.Builder(requireContext())
-            builder1.setTitle(R.string.settings_cookies_dialog_title)
-            builder1.setMessage(R.string.settings_cookies_dialog_content2)
-            builder1.setCancelable(true)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = inflater.inflate(R.layout.fragment_settings, container, false)
 
-            builder1.setPositiveButton(
-                    getString(R.string.action_ok),
-                    DialogInterface.OnClickListener { dialog, id ->
-                        settingsWebView.cleanup()
-                        SessionManager.getInstance().removeAllSessions()
-                        dialog.cancel()
-                        TelemetryWrapper.clearDataEvent()
-                    })
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        lockIcon.setImageResource(R.drawable.ic_lock)
+        telemetryButton.isChecked = DataUploadPreference.isEnabled(requireContext())
 
-            builder1.setNegativeButton(
-                    getString(R.string.action_cancel),
-                    DialogInterface.OnClickListener { dialog, id -> dialog.cancel() })
+        telemetryView.setOnClickListener {
+            val enabled = !DataUploadPreference.isEnabled(requireContext())
+            DataUploadPreference.setIsEnabled(requireContext(), enabled)
+            telemetryButton.isChecked = enabled
+        }
 
-            val alert11 = builder1.create()
-            alert11.show()
+        deleteButton.setOnClickListener { button ->
+            val builder = AlertDialog.Builder(requireContext())
+            builder.setTitle(R.string.settings_cookies_dialog_title)
+            builder.setMessage(R.string.settings_cookies_dialog_content2)
+            builder.setCancelable(true)
+
+            builder.setPositiveButton(
+                getString(R.string.action_ok),
+                DialogInterface.OnClickListener { dialog, _ ->
+                    val appContext = requireContext().applicationContext
+
+                    button.isEnabled = false
+                    dialog.dismiss()
+                    SessionManager.getInstance().removeAllSessions()
+
+                    WebViewProvider.clearBrowsingData(appContext).accept(
+                        {
+                            Handler(Looper.getMainLooper()).post {
+                                button.isEnabled = true
+                                Toast.makeText(
+                                    appContext,
+                                    "Browsing data cleared",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                            TelemetryWrapper.clearDataEvent()
+                        },
+                        { error ->
+                            Handler(Looper.getMainLooper()).post {
+                                button.isEnabled = true
+                                Toast.makeText(
+                                    appContext,
+                                    "Could not clear browsing data: " +
+                                        (error?.message ?: "Unknown error"),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    )
+                }
+            )
+
+            builder.setNegativeButton(
+                getString(R.string.action_cancel),
+                DialogInterface.OnClickListener { dialog, _ ->
+                    dialog.cancel()
+                }
+            )
+
+            builder.create().show()
         }
 
         extensionsButton.setOnClickListener {
@@ -92,31 +138,27 @@ class SettingsFragment : Fragment() {
 
     override fun onStart() {
         super.onStart()
-        requireContext().getAccessibilityManager().addTouchExplorationStateChangeListener(voiceViewStateChangeListener)
+
+        requireContext().getAccessibilityManager()
+            .addTouchExplorationStateChangeListener(voiceViewStateChangeListener)
+
         updateForAccessibility()
     }
 
     override fun onStop() {
         super.onStop()
-        requireContext().getAccessibilityManager().removeTouchExplorationStateChangeListener(voiceViewStateChangeListener)
+
+        requireContext().getAccessibilityManager()
+            .removeTouchExplorationStateChangeListener(voiceViewStateChangeListener)
     }
 
-    /**
-     * Updates the views in this fragment based on Accessibility status.
-     * See the comment at the declaration of these views in XML for more details.
-     */
     private fun updateForAccessibility() {
-        // When VoiceView is enabled, since the parent is initially focusable in the XML, focus is
-        // given to the parent when the Settings opens. Here, after we set focusable to false, we
-        // must also explicitly clear focus in order to give focus to the child.
-        //
-        // When we change VoiceView from enabled -> disabled and this setting is focused, focus is
-        // cleared from this setting and nothing is selected. This is fine: the user can press
-        // left-right to focus something else and it's an edge case that I don't think it is worth
-        // adding code to fix.
         val shouldFocus = !requireContext().isVoiceViewEnabled()
         telemetryView.isFocusable = shouldFocus
-        if (!shouldFocus) { telemetryView.clearFocus() }
+
+        if (!shouldFocus) {
+            telemetryView.clearFocus()
+        }
     }
 
     companion object {
