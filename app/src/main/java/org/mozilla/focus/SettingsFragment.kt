@@ -23,6 +23,7 @@ import org.mozilla.focus.browser.InfoActivity
 import org.mozilla.focus.ext.getAccessibilityManager
 import org.mozilla.focus.ext.isVoiceViewEnabled
 import org.mozilla.focus.extensions.ExtensionsActivity
+import org.mozilla.focus.diagnostics.PlaybackDiagnosticsActivity
 import org.mozilla.focus.iwebview.WebViewProvider
 import org.mozilla.focus.session.SessionManager
 import org.mozilla.focus.telemetry.DataUploadPreference
@@ -59,14 +60,22 @@ class SettingsFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View = inflater.inflate(R.layout.fragment_settings, container, false)
+    ): View = inflater.inflate(
+        R.layout.fragment_settings,
+        container,
+        false
+    )
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         lockIcon.setImageResource(R.drawable.ic_lock)
-        telemetryButton.isChecked = DataUploadPreference.isEnabled(requireContext())
+
+        telemetryButton.isChecked =
+            DataUploadPreference.isEnabled(requireContext())
 
         telemetryView.setOnClickListener {
-            val enabled = !DataUploadPreference.isEnabled(requireContext())
+            val enabled =
+                !DataUploadPreference.isEnabled(requireContext())
+
             DataUploadPreference.setIsEnabled(requireContext(), enabled)
             telemetryButton.isChecked = enabled
         }
@@ -90,17 +99,20 @@ class SettingsFragment : Fragment() {
                         {
                             Handler(Looper.getMainLooper()).post {
                                 button.isEnabled = true
+
                                 Toast.makeText(
                                     appContext,
                                     "Browsing data cleared",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
+
                             TelemetryWrapper.clearDataEvent()
                         },
                         { error ->
                             Handler(Looper.getMainLooper()).post {
                                 button.isEnabled = true
+
                                 Toast.makeText(
                                     appContext,
                                     "Could not clear browsing data: " +
@@ -124,7 +136,23 @@ class SettingsFragment : Fragment() {
         }
 
         extensionsButton.setOnClickListener {
-            startActivity(Intent(requireContext(), ExtensionsActivity::class.java))
+            startActivity(
+                Intent(
+                    requireContext(),
+                    ExtensionsActivity::class.java
+                )
+            )
+        }
+
+        view.findViewById<View>(
+            R.id.playbackDiagnosticsButton
+        ).setOnClickListener {
+            startActivity(
+                Intent(
+                    requireContext(),
+                    PlaybackDiagnosticsActivity::class.java
+                )
+            )
         }
 
         aboutButton.setOnClickListener {
@@ -132,15 +160,20 @@ class SettingsFragment : Fragment() {
         }
 
         privacyNoticeButton.setOnClickListener {
-            startActivity(InfoActivity.getPrivacyNoticeIntent(requireContext()))
+            startActivity(
+                InfoActivity.getPrivacyNoticeIntent(requireContext())
+            )
         }
     }
 
     override fun onStart() {
         super.onStart()
 
-        requireContext().getAccessibilityManager()
-            .addTouchExplorationStateChangeListener(voiceViewStateChangeListener)
+        requireContext()
+            .getAccessibilityManager()
+            .addTouchExplorationStateChangeListener(
+                voiceViewStateChangeListener
+            )
 
         updateForAccessibility()
     }
@@ -148,8 +181,11 @@ class SettingsFragment : Fragment() {
     override fun onStop() {
         super.onStop()
 
-        requireContext().getAccessibilityManager()
-            .removeTouchExplorationStateChangeListener(voiceViewStateChangeListener)
+        requireContext()
+            .getAccessibilityManager()
+            .removeTouchExplorationStateChangeListener(
+                voiceViewStateChangeListener
+            )
     }
 
     private fun updateForAccessibility() {
