@@ -3,194 +3,195 @@
 
 package org.mozilla.focus.diagnostics;
 
-import java.text.DateFormat;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.Locale;
-import java.util.Set;
-import java.util.WeakHashMap;
-import org.json.JSONArray;
-import org.json.JSONObject;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.graphics.Color;
+import android.os.Bundle;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.mozilla.tv.firefox.R;
 
-/** UI-thread controls shared by browser views and the diagnostics screen. */
-public final class PlaybackDiagnostics {
-    private static final PlaybackSampleStore STORE =
-            new PlaybackSampleStore(120);
+public final class PlaybackDiagnosticsActivity extends AppCompatActivity {
+    private final ExecutorService worker =
+            Executors.newSingleThreadExecutor();
 
-    private static final Set<Runnable> LISTENERS =
-            Collections.newSetFromMap(
-                    new WeakHashMap<Runnable, Boolean>());
+    private Button recordingButton;
+    private Button copyButton;
+    private TextView reportView;
+    private String codecReport;
+    private boolean closed;
 
-    private PlaybackDiagnostics() {}
+    @Override
+    protected void onCreate(@Nullable Bundle savedState) {
+        super.onCreate(savedState);
+        setTitle(R.string.playback_diagnostics_title);
 
-    public static boolean isRecording() {
-        return STORE.isRecording();
-    }
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(Color.rgb(24, 25, 32));
 
-    public static long epoch() {
-        return STORE.getEpoch();
-    }
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
 
-    public static void addListener(Runnable listener) {
-        LISTENERS.add(listener);
-    }
+        int padding = dp(28);
+        content.setPadding(padding, padding, padding, padding);
 
-    public static void removeListener(Runnable listener) {
-        LISTENERS.remove(listener);
-    }
+        scroll.addView(content);
+        setContentView(scroll);
 
-    public static void setRecording(boolean enabled) {
-        if (enabled) {
-            STORE.start();
-        } else {
-            STORE.stop();
-        }
-        notifyListeners();
-    }
+        label(
+                content,
+                getString(R.string.playback_diagnostics_title),
+                28);
 
-    public static void clear() {
-        STORE.clear();
-        notifyListeners();
-    }
+        label(
+                content,
+                getString(R.string.playback_diagnostics_instructions),
+                17);
 
-    private static void notifyListeners() {
-        for (Runnable listener : new ArrayList<>(LISTENERS)) {
-            listener.run();
-        }
-    }
+        recordingButton = button(
+                content,
+                R.string.playback_record_start,
+                () -> {
+                    PlaybackDiagnostics.setRecording(
+                            !PlaybackDiagnostics.isRecording());
+                    render();
+                });
 
-    public static void record(long epoch, JSONObject response) {
-        StringBuilder text = new StringBuilder(
-                DateFormat.getTimeInstance().format(new Date()));
+        button(
+                content,
+                R.string.playback_refresh,
+                this::render);
 
-        JSONArray frames = response.optJSONArray("frames");
+        copyButton = button(
+                content,
+                R.string.playback_copy,
+                () -> {
+                    ClipboardManager clipboard =
+                            (ClipboardManager) getSystemService(
+                                    CLIPBOARD_SERVICE);
 
-        if (frames == null) {
-            STORE.record(
-                    epoch,
-                    text.append(" — Playback sample unavailable").toString());
-            return;
-        }
+                    if (clipboard == null || codecReport == null) {
+                        return;
+                    }
 
-        int videos = 0;
+                    try {
+                        clipboard.setPrimaryClip(
+                                ClipData.newPlainText(
+                                        "Firefox TV playback report",
+                                        report()));
 
-        for (
-                int frame = 0;
-                frame < Math.min(frames.length(), 16) && videos < 8;
-                frame++) {
-            JSONArray media = frames.optJSONArray(frame);
+                        Toast.makeText(
+                                this,
+                                R.string.playback_copied,
+                                Toast.LENGTH_SHORT).show();
+                    } catch (RuntimeException error) {
+                        Toast.makeText(
+                                this,
+                                R.string.playback_copy_failed,
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
 
-            if (media == null) {
-                continue;
-            }
+        copyButton.setEnabled(false);
 
-            for (
-                    int index = 0;
-                    index < Math.min(media.length(), 8) && videos < 8;
-                    index++) {
-                JSONObject video = media.optJSONObject(index);
+        button(
+                content,
+                R.string.playback_clear,
+                () -> {
+                    PlaybackDiagnostics.clear();
+                    render();
+                });
 
-                if (video == null) {
-                    continue;
+        reportView = label(content, "", 15);
+        reportView.setTypeface(android.graphics.Typeface.MONOSPACE);
+        reportView.setFocusable(true);
+
+        render();
+        recordingButton.requestFocus();
+
+        worker.execute(() -> {
+            String result = CodecReport.collect();
+
+            runOnUiThread(() -> {
+                if (closed || isFinishing() || isDestroyed()) {
+                    return;
                 }
 
-                videos++;
-
-                text.append("\n  Frame ")
-                        .append(frame)
-                        .append(" video ")
-                        .append(index)
-                        .append(": ")
-                        .append(video.optInt("width"))
-                        .append('x')
-                        .append(video.optInt("height"))
-                        .append("; time=")
-                        .append(number(video, "time"))
-                        .append("s; buffered ahead=")
-                        .append(number(video, "bufferedAhead"))
-                        .append("s; dropped=")
-                        .append(number(video, "dropped"))
-                        .append('/')
-                        .append(number(video, "total"))
-                        .append("; ready=")
-                        .append(video.optInt("ready"))
-                        .append("; network=")
-                        .append(video.optInt("network"))
-                        .append("; paused=")
-                        .append(video.optBoolean("paused"))
-                        .append("; muted=")
-                        .append(video.optBoolean("muted"))
-                        .append("; volume=")
-                        .append(number(video, "volume"))
-                        .append("; speed=")
-                        .append(number(video, "speed"))
-                        .append("; seeking=")
-                        .append(video.optBoolean("seeking"))
-                        .append("; ended=")
-                        .append(video.optBoolean("ended"))
-                        .append("; fullscreen=")
-                        .append(video.optBoolean("fullscreen"))
-                        .append("; error=")
-                        .append(video.optInt("error"));
-            }
-        }
-
-        if (videos == 0) {
-            text.append(" — No video elements found in accessible frames");
-        }
-
-        STORE.record(epoch, text.toString());
+                codecReport = result;
+                copyButton.setEnabled(true);
+                render();
+            });
+        });
     }
 
-    public static void recordUnavailable(long epoch) {
-        STORE.record(
-                epoch,
-                DateFormat.getTimeInstance().format(new Date())
-                        + " — Playback sample timed out");
+    private String report() {
+        return (
+                codecReport == null
+                        ? getString(R.string.playback_querying)
+                        : codecReport)
+                + "\n\n"
+                + PlaybackDiagnostics.report();
     }
 
-    private static String number(JSONObject object, String key) {
-        double value = object.optDouble(key, Double.NaN);
+    private void render() {
+        recordingButton.setText(
+                PlaybackDiagnostics.isRecording()
+                        ? R.string.playback_record_stop
+                        : R.string.playback_record_start);
 
-        return Double.isFinite(value)
-                ? String.format(Locale.US, "%.2f", value)
-                : "unknown";
+        reportView.setText(report());
     }
 
-    public static String report() {
-        String[] samples = STORE.snapshot();
+    private TextView label(
+            LinearLayout parent,
+            String text,
+            int size) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(Color.WHITE);
+        label.setTextSize(size);
+        label.setPadding(0, dp(10), 0, dp(10));
+        parent.addView(label);
+        return label;
+    }
 
-        StringBuilder report = new StringBuilder("Playback recording: ")
-                .append(isRecording() ? "ON" : "OFF")
-                .append("\nSamples retained: ")
-                .append(samples.length)
-                .append(" / 120")
-                .append(
-                        "\nSamples are taken about every 2 seconds "
-                                + "while the browser is in the foreground.")
-                .append(
-                        "\nDropped/total frames are cumulative counters "
-                                + "for each video, not a measured frame rate.")
-                .append(
-                        "\nready: 0=no data, 1=metadata, 2=current frame, "
-                                + "3=future data, 4=enough data.")
-                .append(
-                        "\nnetwork: 0=empty, 1=idle, 2=loading, 3=no source.")
-                .append(
-                        "\nNo page addresses or media URLs are recorded. "
-                                + "Samples clear when the app process ends.\n");
+    private Button button(
+            LinearLayout parent,
+            int text,
+            Runnable action) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setMinHeight(dp(56));
+        button.setFocusable(true);
+        button.setOnClickListener(view -> action.run());
 
-        if (samples.length == 0) {
-            report.append(
-                    "\nNo samples. Start recording, return to a video, "
-                            + "then reopen this screen.\n");
-        }
+        parent.addView(
+                button,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        for (String sample : samples) {
-            report.append('\n').append(sample).append('\n');
-        }
+        return button;
+    }
 
-        return report.toString();
+    private int dp(int value) {
+        return Math.round(
+                value * getResources().getDisplayMetrics().density);
+    }
+
+    @Override
+    protected void onDestroy() {
+        closed = true;
+        worker.shutdownNow();
+        super.onDestroy();
     }
 }
