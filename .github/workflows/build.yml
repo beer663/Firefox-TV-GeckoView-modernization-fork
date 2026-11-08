@@ -1,11 +1,7 @@
 name: Build Firefox TV (Gecko only)
 
 on:
-  workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-      - '**'
+  workflow_dispatch: # Only runs when manually triggered from the Actions tab
 
 jobs:
   build-gecko:
