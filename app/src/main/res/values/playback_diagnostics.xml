@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playback_diagnostics_title">Playback diagnostics</string>
+    <string name="playback_diagnostics_instructions">Start recording, return to a video, reproduce the problem, then reopen this screen and copy the report. Recording samples accessible video elements while the browser is in the foreground. Nothing is sent automatically.</string>
+    <string name="playback_record_start">Start new playback recording</string>
+    <string name="playback_record_stop">Stop playback recording</string>
+    <string name="playback_refresh">Refresh report</string>
+    <string name="playback_copy">Copy report</string>
+    <string name="playback_clear">Clear samples</string>
+    <string name="playback_copied">Playback report copied</string>
+    <string name="playback_copy_failed">Could not copy the report</string>
+    <string name="playback_querying">Querying device decoder capabilities…</string>
+</resources>
