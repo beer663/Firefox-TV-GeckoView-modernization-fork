@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.focus.extensions;
 
 import android.app.AlertDialog;
@@ -8,7 +9,6 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -17,6 +17,8 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import java.util.ArrayList;
+import java.util.List;
 import org.mozilla.focus.MainActivity;
 import org.mozilla.focus.iwebview.WebViewProvider;
 import org.mozilla.geckoview.AllowOrDeny;
@@ -24,16 +26,10 @@ import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.WebExtension;
 import org.mozilla.geckoview.WebExtensionController;
 
-import java.util.ArrayList;
-import java.util.List;
-
-/**
- * User-driven add-on manager using the browser's shared GeckoRuntime.
- * Nothing is installed automatically.
- */
 public final class ExtensionsActivity extends AppCompatActivity {
     private static final String UBLOCK_XPI =
             "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi";
+
     private static final String AMO_URL =
             "https://addons.mozilla.org/en-US/firefox/";
 
@@ -42,16 +38,18 @@ public final class ExtensionsActivity extends AppCompatActivity {
     private TextView status;
     private WebExtensionController controller;
     private boolean busy;
+
     private final List<Runnable> pendingPermissionDenials = new ArrayList<>();
 
     private boolean isScreenClosed() {
         return isFinishing() || isDestroyed();
     }
 
-    // Gecko operations may finish after the user leaves this Activity.
     private void onScreen(Runnable update) {
         runOnUiThread(() -> {
-            if (!isScreenClosed()) update.run();
+            if (!isScreenClosed()) {
+                update.run();
+            }
         });
     }
 
@@ -70,19 +68,27 @@ public final class ExtensionsActivity extends AppCompatActivity {
         setContentView(scroll);
 
         label(root, "Extensions", 30, true);
-        label(root, "Choose an extension to install. Nothing is preinstalled.", 17, false);
+        label(
+                root,
+                "Install uBlock Origin or another signed Firefox add-on.",
+                17,
+                false);
+
         status = label(root, "Checking installed extensions…", 16, false);
 
         action(root, "Browse Firefox Add-ons", this::browseAddons);
         action(root, "Install uBlock Origin", () -> confirmInstall(UBLOCK_XPI));
         action(root, "Install from signed XPI link", this::inputXpiLink);
 
-        label(root,
+        label(
+                root,
                 "Browsing the add-ons website does not install an add-on by itself. "
                         + "Return here to install a signed XPI.",
-                14, false);
+                14,
+                false);
 
         label(root, "Installed extensions", 23, true);
+
         installedList = new LinearLayout(this);
         installedList.setOrientation(LinearLayout.VERTICAL);
         root.addView(installedList);
@@ -98,10 +104,10 @@ public final class ExtensionsActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        // Complete GeckoResults before dismissing dialogs so installs never wait forever.
         for (Runnable deny : new ArrayList<>(pendingPermissionDenials)) {
             deny.run();
         }
+
         pendingPermissionDenials.clear();
 
         if (controller != null && controller.getPromptDelegate() == promptDelegate) {
@@ -113,55 +119,59 @@ public final class ExtensionsActivity extends AppCompatActivity {
 
     private final WebExtensionController.PromptDelegate promptDelegate =
             new WebExtensionController.PromptDelegate() {
-        @Nullable
-        @Override
-        public GeckoResult<WebExtension.PermissionPromptResponse> onInstallPromptRequest(
-                @NonNull WebExtension extension,
-                @NonNull String[] permissions,
-                @NonNull String[] origins,
-                @NonNull String[] dataCollectionPermissions) {
-            GeckoResult<WebExtension.PermissionPromptResponse> result = new GeckoResult<>();
+                @Nullable
+                @Override
+                public GeckoResult<WebExtension.PermissionPromptResponse>
+                        onInstallPromptRequest(
+                                @NonNull WebExtension extension,
+                                @NonNull String[] permissions,
+                                @NonNull String[] origins,
+                                @NonNull String[] dataCollectionPermissions) {
+                    GeckoResult<WebExtension.PermissionPromptResponse> result =
+                            new GeckoResult<>();
 
-            runOnUiThread(() -> permissionPrompt(
-                    extension,
-                    permissions,
-                    origins,
-                    dataCollectionPermissions,
-                    granted -> result.complete(
-                            new WebExtension.PermissionPromptResponse(
-                                    granted, false, false))));
+                    runOnUiThread(() -> permissionPrompt(
+                            extension,
+                            permissions,
+                            origins,
+                            dataCollectionPermissions,
+                            granted -> result.complete(
+                                    new WebExtension.PermissionPromptResponse(
+                                            granted,
+                                            false,
+                                            false))));
 
-            return result;
-        }
+                    return result;
+                }
 
-        @Nullable
-        @Override
-        public GeckoResult<AllowOrDeny> onUpdatePrompt(
-                @NonNull WebExtension extension,
-                @NonNull String[] newPermissions,
-                @NonNull String[] newOrigins,
-                @NonNull String[] newDataCollectionPermissions) {
-            return additionalPermissions(
-                    extension,
-                    newPermissions,
-                    newOrigins,
-                    newDataCollectionPermissions);
-        }
+                @Nullable
+                @Override
+                public GeckoResult<AllowOrDeny> onUpdatePrompt(
+                        @NonNull WebExtension extension,
+                        @NonNull String[] newPermissions,
+                        @NonNull String[] newOrigins,
+                        @NonNull String[] newDataCollectionPermissions) {
+                    return additionalPermissions(
+                            extension,
+                            newPermissions,
+                            newOrigins,
+                            newDataCollectionPermissions);
+                }
 
-        @Nullable
-        @Override
-        public GeckoResult<AllowOrDeny> onOptionalPrompt(
-                @NonNull WebExtension extension,
-                @NonNull String[] permissions,
-                @NonNull String[] origins,
-                @NonNull String[] dataCollectionPermissions) {
-            return additionalPermissions(
-                    extension,
-                    permissions,
-                    origins,
-                    dataCollectionPermissions);
-        }
-    };
+                @Nullable
+                @Override
+                public GeckoResult<AllowOrDeny> onOptionalPrompt(
+                        @NonNull WebExtension extension,
+                        @NonNull String[] permissions,
+                        @NonNull String[] origins,
+                        @NonNull String[] dataCollectionPermissions) {
+                    return additionalPermissions(
+                            extension,
+                            permissions,
+                            origins,
+                            dataCollectionPermissions);
+                }
+            };
 
     private interface PermissionAnswer {
         void accept(boolean granted);
@@ -196,7 +206,6 @@ public final class ExtensionsActivity extends AppCompatActivity {
             return;
         }
 
-        // Never grant permissions or private browsing access without a user choice.
         String name = extension.metaData != null && extension.metaData.name != null
                 ? extension.metaData.name
                 : "this extension";
@@ -220,7 +229,10 @@ public final class ExtensionsActivity extends AppCompatActivity {
 
         Runnable deny = () -> {
             once.accept(false);
-            if (dialog[0] != null) dialog[0].dismiss();
+
+            if (dialog[0] != null) {
+                dialog[0].dismiss();
+            }
         };
 
         pendingPermissionDenials.add(deny);
@@ -233,7 +245,6 @@ public final class ExtensionsActivity extends AppCompatActivity {
                 .create();
 
         dialog[0].setOnDismissListener(d -> {
-            // Back, dismissal, and Activity destruction all deny.
             once.accept(false);
             pendingPermissionDenials.remove(deny);
         });
@@ -249,13 +260,13 @@ public final class ExtensionsActivity extends AppCompatActivity {
         if (entries == null || entries.length == 0) return;
 
         out.append("\n").append(title).append(":");
+
         for (String item : entries) {
             out.append("\n• ").append(item);
         }
     }
 
     private void browseAddons() {
-        // Open AMO in this browser. Installation is initiated from this screen.
         Intent intent = new Intent(
                 Intent.ACTION_VIEW,
                 Uri.parse(AMO_URL),
@@ -340,6 +351,7 @@ public final class ExtensionsActivity extends AppCompatActivity {
         controller.list().accept(
                 list -> onScreen(() -> {
                     displayExtensions(list);
+
                     if (readyMessage != null && !busy) {
                         status.setText(readyMessage);
                     }
@@ -351,12 +363,22 @@ public final class ExtensionsActivity extends AppCompatActivity {
     private void displayExtensions(List<WebExtension> installed) {
         installedList.removeAllViews();
 
-        if (installed == null || installed.isEmpty()) {
+        List<WebExtension> userExtensions = new ArrayList<>();
+
+        if (installed != null) {
+            for (WebExtension extension : installed) {
+                if (!extension.isBuiltIn) {
+                    userExtensions.add(extension);
+                }
+            }
+        }
+
+        if (userExtensions.isEmpty()) {
             label(installedList, "No extensions installed.", 16, false);
             return;
         }
 
-        for (WebExtension extension : installed) {
+        for (WebExtension extension : userExtensions) {
             String name = displayName(extension);
             boolean enabled = extension.metaData != null && extension.metaData.enabled;
 
@@ -388,6 +410,7 @@ public final class ExtensionsActivity extends AppCompatActivity {
         if (controller == null || busy || isScreenClosed()) return;
 
         busy = true;
+
         status.setText(
                 (enabled ? "Enabling " : "Disabling ")
                         + displayName(extension) + "…");
