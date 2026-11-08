@@ -24,7 +24,7 @@ android {
 
         ndk {
             // One universal Android TV APK. Devices choose their ABI at install time.
-        // Includes ARMv7 (older Android 8 TVs), ARM64, and emulator/other x86 ABIs.
+            // Includes ARMv7, ARM64, and emulator/other x86 ABIs.
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }
 
@@ -66,7 +66,7 @@ android {
     }
 
     testOptions {
-        unitTests.includeAndroidResources true // for robolectric.
+        unitTests.includeAndroidResources true
         execution 'ANDROIDX_TEST_ORCHESTRATOR'
     }
 
@@ -82,6 +82,16 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// The extension manager depends on GeckoView. Keep the legacy System sources
+// in the repository, but do not offer an APK variant that cannot compile or run it.
+androidComponents {
+    beforeVariants(selector().all()) { variantBuilder ->
+        if (variantBuilder.name.startsWith('system')) {
+            variantBuilder.enable = false
+        }
     }
 }
 
@@ -111,7 +121,7 @@ dependencies {
     implementation 'com.google.android.gms:play-services-oss-licenses:17.1.0'
 
     implementation ("com.google.code.findbugs:annotations:3.0.1") {
-        // We really only need the SuppressFBWarnings annotation, everything else can be ignored.
+        // We really only need the SuppressFBWarnings annotation.
         transitive = false
     }
 
@@ -137,18 +147,17 @@ dependencies {
     implementation "org.mozilla.components:support-utils:$moz_components_version"
     implementation "org.mozilla.components:support-rusthttp:$moz_components_version"
 
-    // Exclude an obsolete nightly variant if a legacy component still declares it.
-    // GeckoView stable is declared explicitly below.
-    // Keep engine implementations flavor-scoped so each APK uses exactly one browser engine.
+    // Keep engine implementations flavor-scoped.
     systemImplementation "org.mozilla.components:browser-engine-system:$moz_components_version"
-    // Legacy Android Components classes remain source-compatible; do not bring in
-    // their 2019 transitive GeckoView AAR. The actual browsing frontend uses the
-    // modern raw GeckoSession adapter in app/src/gecko/java/org/mozilla/focus/.
+
+    // Do not bring in the legacy component's transitive GeckoView AAR.
+    // The browsing frontend uses the modern raw GeckoSession adapter.
     geckoImplementation("org.mozilla.components:browser-engine-gecko:$moz_components_version") {
         exclude group: 'org.mozilla.geckoview'
     }
+
     // Published stable GeckoView build. Android 8 (API 26) minimum.
-    geckoImplementation 'org.mozilla.geckoview:geckoview:159.0.20261022150525' 
+    geckoImplementation 'org.mozilla.geckoview:geckoview:159.0.20261022150525'
 
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutines_version"
@@ -157,8 +166,7 @@ dependencies {
     implementation 'io.reactivex.rxjava2:rxkotlin:2.3.0'
     implementation 'io.reactivex.rxjava2:rxandroid:2.1.1'
 
-    // lifecycle-extensions was discontinued at 2.2.0; 2.6.2 was never published.
-    // Keep the other Lifecycle modules on architecture_components_version (2.6.2).
+    // lifecycle-extensions was discontinued at 2.2.0.
     implementation "androidx.lifecycle:lifecycle-extensions:2.2.0"
     implementation "androidx.lifecycle:lifecycle-viewmodel:$architecture_components_version"
     implementation "androidx.lifecycle:lifecycle-reactivestreams:$architecture_components_version"
@@ -203,9 +211,8 @@ dependencies {
 
 // -------------------------------------------------------------------------------------------------
 // L10N: Generate list of locales
-// Firefox TV provides its own (Android independent) locale switcher. That switcher requires a list
-// of locale codes. The generated file (src/main/java/.../generated/LocaleList.java) is checked in;
-// run `gradle generateLocaleList` to refresh it after adding a locale.
+// Firefox TV provides its own locale switcher, which requires a list of locale codes.
+// The generated LocaleList.java is checked in.
 // -------------------------------------------------------------------------------------------------
 
 def getEnabledLocales() {
@@ -219,8 +226,6 @@ def getEnabledLocales() {
     })
 
     def langs = potentialLanguageDirs.findAll {
-        // Only select locales where strings.xml exists
-        // Some locales might only contain e.g. sumo URLs in urls.xml, and should be skipped (see es vs es-ES/etc)
         return file(new File(it, "strings.xml")).exists()
     }.collect {
         return it.name
@@ -228,7 +233,7 @@ def getEnabledLocales() {
         return it.substring("values-".length())
     }.collect {
         if (it.length() > 3 && it.contains("-r")) {
-            // Android resource dirs add an "r" prefix to the region - we need to strip that for Java usage.
+            // Strip Android's "r" prefix from the region.
             def regionPrefixPosition = it.indexOf("-r") + 1
             return it.substring(0, regionPrefixPosition) + it.substring(regionPrefixPosition + 1)
         } else {
@@ -238,7 +243,7 @@ def getEnabledLocales() {
         return '"' + it + '"'
     }
 
-    // en-US is the default language (in "values") and therefore needs to be added separately.
+    // en-US is the default language in "values".
     langs << '"en-US"'
     return langs.sort { it }
 }
@@ -260,7 +265,6 @@ task generateLocaleList {
         localeList << "import java.util.List;" << "\n"
         localeList << "\n"
         localeList << "public class LocaleList {" << "\n"
-        // findbugs doesn't like "public static final String[]", see http://findbugs.sourceforge.net/bugDescriptions.html#MS_MUTABLE_ARRAY
         localeList << "    public static final List<String> BUNDLED_LOCALES = Collections.unmodifiableList(Arrays.asList(new String[] { "
         localeList << getEnabledLocales().join(", ") + " }));" << "\n"
         localeList << "}" << "\n"
