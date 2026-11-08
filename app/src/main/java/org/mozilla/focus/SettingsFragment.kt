@@ -14,20 +14,22 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
+import android.widget.Button
 import android.widget.CheckBox
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import org.mozilla.tv.firefox.R
 import org.mozilla.focus.browser.InfoActivity
+import org.mozilla.focus.diagnostics.PlaybackDiagnosticsActivity
 import org.mozilla.focus.ext.getAccessibilityManager
 import org.mozilla.focus.ext.isVoiceViewEnabled
 import org.mozilla.focus.extensions.ExtensionsActivity
-import org.mozilla.focus.diagnostics.PlaybackDiagnosticsActivity
 import org.mozilla.focus.iwebview.WebViewProvider
 import org.mozilla.focus.session.SessionManager
 import org.mozilla.focus.telemetry.DataUploadPreference
 import org.mozilla.focus.telemetry.TelemetryWrapper
+import org.mozilla.tv.firefox.R
 
 class SettingsFragment : Fragment() {
     private val telemetryButton
@@ -67,6 +69,48 @@ class SettingsFragment : Fragment() {
     )
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        val desktopButton = Button(requireContext()).apply {
+            id = View.generateViewId()
+            isAllCaps = false
+            isFocusable = true
+            textSize = 20f
+
+            fun updateLabel() {
+                text = if (WebViewProvider.isDesktopModeEnabled(context)) {
+                    "Desktop sites: On"
+                } else {
+                    "Desktop sites: Off"
+                }
+            }
+
+            updateLabel()
+
+            setOnClickListener {
+                WebViewProvider.setDesktopModeEnabled(
+                    context,
+                    !WebViewProvider.isDesktopModeEnabled(context)
+                )
+                updateLabel()
+            }
+        }
+
+        val desktopHeight =
+            (64 * resources.displayMetrics.density).toInt()
+
+        val desktopLayout =
+            LinearLayout.LayoutParams(0, desktopHeight, 1f).apply {
+                marginStart =
+                    (30 * resources.displayMetrics.density).toInt()
+                topMargin =
+                    (12 * resources.displayMetrics.density).toInt()
+            }
+
+        (extensionsButton.parent as LinearLayout).addView(
+            desktopButton,
+            0,
+            desktopLayout
+        )
+
         lockIcon.setImageResource(R.drawable.ic_lock)
 
         telemetryButton.isChecked =
