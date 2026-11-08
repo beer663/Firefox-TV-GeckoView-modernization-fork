@@ -1,165 +1,132 @@
-> **Modernization in progress.** This copy has been moved to current build tools (Gradle 8.9, Android Gradle Plugin 8.5, Kotlin 1.9, JDK 17, compileSdk 34). The GeckoView flavor, Glean telemetry and the old code-quality plugins were removed. Build with `gradle :app:assembleSystemDebug` (or let the GitHub Action in `.github/workflows/build.yml` do it).
+# Firefox TV — GeckoView modernization fork
 
-> ⚠️ Firefox has ended support for Amazon Fire TV. This app may continue to work, but it won’t receive security or other updates effective April 30, 2021. See also [https://support.mozilla.org/en-US/kb/end-support-firefox-amazon-devices](https://support.mozilla.org/en-US/kb/end-support-firefox-amazon-devices).
+An Android TV browser based on Firefox TV, using GeckoView and a manual
+Firefox extension installer.
 
-# Firefox for Amazon's Fire TV
+The legacy System/WebView build variant is disabled. Build the Gecko variant
+to use uBlock Origin.
 
-[![Task Status](https://github.taskcluster.net/v1/repository/mozilla-mobile/firefox-tv/master/badge.svg)](https://github.taskcluster.net/v1/repository/mozilla-mobile/firefox-tv/master/latest)
-[![codecov](https://codecov.io/gh/mozilla-mobile/firefox-tv/branch/master/graph/badge.svg)](https://codecov.io/gh/mozilla-mobile/firefox-tv)
+## Requirements
 
-_Fast for good, just right for watching video at home. A browser for
-discovering and watching web video on the big screen TV for users to install on
-their Amazon Fire TV and Fire TV stick._
+- A full JDK 17, including javac.
+- Android SDK.
+- Android platform android-37.0.
+- Android build tools 36.0.0.
+- Android 8 / API 26 or later on the device.
 
-[Get it on Amazon Fire TV][amazon link]
+Use the included Gradle wrapper. It pins Gradle 9.3.1.
 
-## Getting Involved
-Our code is open source and we encourage all positive contributions! We love pull
-requests, bug reports, ideas, (security) code reviews and other kinds of contributions.
-Before you contribute, please read the [Community Participation
-Guidelines](https://www.mozilla.org/en-US/about/governance/policies/participation/).
+## Build
 
-* [Guide to Contributing][contribute] (**new contributors start here!**)
-* Open issues: https://github.com/mozilla-mobile/firefox-tv/issues
-  * [`good first issues`][good first] | [`help wanted`][help]
-  * [File a security issue][sec issue]
-* Project wiki: https://github.com/mozilla-mobile/firefox-tv/wiki
-* Mailing list:
-[firefox-focus-public@](https://mail.mozilla.org/listinfo/firefox-focus-public)
+Set ANDROID_HOME to your Android SDK directory, or configure sdk.dir in a
+local.properties file at the project root.
 
-## Build instructions
-Dependencies:
-- Java 8, *not the latest version* (for building via the command line)
+Install the required SDK packages:
 
-1. Clone the repository:
-
-  ```shell
-  git clone https://github.com/mozilla-mobile/firefox-tv
-  ```
-
-2. Import the project into Android Studio or build on the command line:
-
-  ```shell
-  ./gradlew clean app:assembleSystemDebug
-  ```
-
-3. Make sure to select the right build variant in Android Studio: **systemDebug**
-
-### Running
-It is recommended to test directly on a Fire TV: see the [developer guide][dev guide] for more info.
-You can connect with:
-```shell
-adb connect <IP address>:5555
-```
-
-And then install via Android Studio or adb. Only a single development device
-can be connected to a Fire TV at a time. Note that while you can install on an
-Android TV emulator, the behavior (particularly `WebView` behavior) is different 
-from Fire TV's and should not be relied upon.
-
-If using an emulator, we recommend the Android TV device image: either 720p or
-1080p is fine. API 22 (Stick) and 25 (4K) are best. You can press `cmd + m` to
-simulate a menu button press.
-
-### Unit Testing
-To run a reasonable subset of the unit tests, we recommend:
 ```sh
-./gradlew testSystemDebug
+sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
 ```
 
-To generate code coverage reports, run:
+The current compileSdk 37 configuration expects the platform directory
+android-37. If your SDK installed it as android-37.0, create an alias on
+Linux or macOS:
+
 ```sh
-./gradlew -Pcoverage jacocoDebugTestReport
+[ -e "$ANDROID_HOME/platforms/android-37" ] || ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
 ```
 
-Reports can be found at `app/build/jacoco/jacoco<buildVariant>TestReport/html/index.html`
+Build from the project root:
 
-### UI Testing
-To run all UI tests, follow these steps
-
-1. Connect to one device
-  - Either use `adb connect` for a real device, or start an emulator instance using AVD
-  - Prefer a real device (emulators will fail some tests)
-  - The next step will fail if you are connected to more than one device
-2. Run `./gradlew connectedSystemDebugAndroidTest` from the command line
-  - Aliasing this command is recommended
-
-### Pre-push hooks
-To reduce review turn-around time, we'd like all pushes to run tests locally. We'd
-recommend you use our provided pre-push hook in `quality/pre-push-recommended.sh`.
-Using this hook will guarantee your hook gets updated as the repository changes.
-This hook tries to run as much as possible without taking too much time.
-
-To add it, run this command from the project root:
 ```sh
-ln -s ../../quality/pre-push-recommended.sh .git/hooks/pre-push
+bash ./gradlew :app:assembleGeckoDebug
 ```
 
-To push without running the pre-push hook (e.g. doc updates):
+On Windows:
+
+```bat
+gradlew.bat :app:assembleGeckoDebug
+```
+
+In Android Studio, select the geckoDebug build variant.
+
+The APK is written to:
+
+```text
+app/build/outputs/apk/gecko/debug/app-gecko-debug.apk
+```
+
+The GitHub Actions workflow in .github/workflows/build.yml includes SDK
+setup and builds the Gecko debug APK.
+
+## Install on a TV
+
+Enable debugging on the device, then connect and install using ADB:
+
 ```sh
-git push <remote> --no-verify
+adb connect <TV-IP>:5555
+adb install -r app/build/outputs/apk/gecko/debug/app-gecko-debug.apk
 ```
 
-### Release process
-(See [this doc](https://github.com/mozilla-mobile/firefox-tv/blob/master/.github/ISSUE_TEMPLATE/---relman-checklist.md) 
-for a description of our release process)
+The debug application ID is org.mozilla.tv.firefox.debug.
 
-### Building release builds
-Release builds can be built in Android Studio or via the command line:
-```sh
-./gradlew assembleSystemRelease # unsigned build
-```
+The universal APK includes ARMv7, ARM64, x86, and x86_64 native libraries,
+so it is large.
 
-These builds will run validation checks that the build is ready for a production release. If you
-do not want to run these checks (e.g. building release builds for local debugging), you can add this
-argument:
-```sh
-./gradlew assembleSystemRelease -PnoValidate
-```
+## Manually install uBlock Origin
 
-#### API keys
-Certain services require an API key, so you'll need to build with the key to use them in the apk.
+1. Open the browser.
+2. Open Settings > Extensions.
+3. Select Install uBlock Origin.
+4. Confirm installation.
+5. Review the requested permissions and select Allow.
+6. Confirm uBlock Origin appears as Enabled.
+7. Return to browsing.
 
-1. To build with the API key (for services such as Sentry), add a `<project-dir>/.<service>_debug`
-file with your key, for example, `<project-dir>/.sentry_dsn_debug`
+Nothing is installed automatically.
 
-    1. To enable Sentry on Debug builds, additionally replace the `isEnabled` value check in
-    `SentryIntegration` value with true (upload is disabled by default in dev builds).
+The installer downloads the Mozilla-signed uBlock Origin XPI from Firefox
+Add-ons. Browsing and extension installation use the same GeckoRuntime
+and persistent profile.
 
-2. Verify the key add was successful. The gradle output is the only way to verify this (although
-it won't indicate if the key is valid). You will see a message in the gradle output
-indicating the key was added:
+The Extensions screen supports:
 
-`Sentry DSN (debug): Added from /Users/mcomella/dev/moz/firefox-tv/.sentry_dsn_debug`
+- Installing uBlock Origin.
+- Installing a signed extension from a direct HTTPS XPI link.
+- Listing installed extensions.
+- Enabling and disabling extensions.
+- Uninstalling extensions.
 
-As opposed to:
+Pressing Back or dismissing a permission prompt denies that request.
+Closing the Extensions screen also denies its outstanding permission
+requests.
 
-`Sentry DSN (debug): X_X`
+The integration does not yet expose extension toolbar popups or the
+uBlock dashboard.
 
-API services currently supported are:
-* sentry_dsn
-* pocket_key
+## Verification
 
-##### Amazon Device Messaging (ADM) API key
-We suspect **ADM access is only available in local builds for core team members** because testing
-ADM requires access to a private API key that is connected to our app on the Amazon store dashboard.
+The updated code passed:
 
-To use ADM in debug builds, there must be a `<project-dir>/app/src/main/assets/api_key.txt` file
-that contains the api key. It is necessary that it is in the project's assets folder.
-Amazon will automatically provide an API key for production builds. See
-[ADM integration doc][adm] for more details. If you're on the core team, we share debug keys: ask
-another developer for access.
+- :app:assembleGeckoDebug
+- :app:assembleDebug
+- Debug APK signature verification
+
+Device launch, extension installation, and actual ad blocking still need
+testing on an Android TV device.
+
+After installing uBlock Origin:
+
+1. Visit a page with known third-party requests.
+2. Compare behavior with uBlock enabled and disabled.
+3. Restart the app.
+4. Confirm uBlock remains installed and enabled.
+
+Existing build-tool deprecation and translated-resource warnings remain.
+The legacy automated test suites have not been validated as part of
+this update.
 
 ## License
 
-    This Source Code Form is subject to the terms of the Mozilla Public
-    License, v. 2.0. If a copy of the MPL was not distributed with this
-    file, You can obtain one at http://mozilla.org/MPL/2.0/
-
-[amazon link]: https://www.amazon.com/dp/B078B5YMPD/ref=sr_1_1
-[dev guide]: https://github.com/mozilla-mobile/firefox-tv/wiki/Developer-guide-and-differences-from-Android
-[contribute]: https://github.com/mozilla-mobile/shared-docs/blob/master/android/CONTRIBUTING.md
-[good first]: https://github.com/mozilla-mobile/firefox-tv/labels/good%20first%20issue
-[help]: https://github.com/mozilla-mobile/firefox-tv/labels/help%20wanted
-[sec issue]: https://bugzilla.mozilla.org/enter_bug.cgi?assigned_to=nobody%40mozilla.org&bug_file_loc=http%3A%2F%2F&bug_ignored=0&bug_severity=normal&bug_status=NEW&cf_fx_iteration=---&cf_fx_points=---&component=Security%3A%20General&contenttypemethod=autodetect&contenttypeselection=text%2Fplain&defined_groups=1&flag_type-4=X&flag_type-607=X&flag_type-791=X&flag_type-800=X&flag_type-803=X&form_name=enter_bug&groups=firefox-core-security&maketemplate=Remember%20values%20as%20bookmarkable%20template&op_sys=Unspecified&priority=--&product=Firefox%20for%20FireTV&rep_platform=Unspecified&target_milestone=---&version=unspecified
-[adm]: https://developer.amazon.com/docs/adm/integrate-your-app.html#store-your-api-key-as-an-asset
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, you can obtain one at https://mozilla.org/MPL/2.0/.
