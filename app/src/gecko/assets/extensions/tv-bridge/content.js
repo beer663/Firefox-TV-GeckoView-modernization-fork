@@ -18,21 +18,65 @@
     }
   };
 
-  // Remember the selected page element before an Android overlay takes focus.
   document.addEventListener("focusin", rememberFocus, true);
 
   let port;
   let sequence = Promise.resolve();
 
+  const collectSample = async message => {
+    const replyPort = port;
+    let timer;
+
+    try {
+      const frames = await Promise.race([
+        browser.runtime.sendMessage({
+          action: "collectPlayback"
+        }),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Sample timeout")),
+            4000
+          );
+        })
+      ]);
+
+      replyPort.postMessage({
+        action: "playbackSample",
+        id: message.id,
+        frames
+      });
+    } catch (_) {
+      // Error messages can contain page addresses, so do not record them.
+      try {
+        replyPort.postMessage({
+          action: "playbackSample",
+          id: message.id,
+          error: true
+        });
+      } catch (_) {
+        // The document or native session has already closed.
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   const onCommand = message => {
-    // Preserve the order of asynchronous page operations.
+    if (message.action === "collectPlayback") {
+      // Diagnostic requests cannot block focus or media controls.
+      collectSample(message);
+      return;
+    }
+
     sequence = sequence
       .then(async () => {
         if (message.action === "cacheFocus") {
           rememberFocus();
         } else if (message.action === "restoreFocus") {
           if (focusedElement && focusedElement.isConnected) {
-            focusedElement.focus({preventScroll: true});
+            focusedElement.focus({
+              preventScroll: true
+            });
           }
         } else if (
           message.action === "eval" ||
@@ -42,7 +86,10 @@
         }
       })
       .catch(error => {
-        console.warn("Firefox TV page operation failed", error);
+        console.warn(
+          "Firefox TV page operation failed",
+          error
+        );
       });
   };
 
@@ -57,7 +104,6 @@
 
   connect();
 
-  // Back/forward navigation can restore a cached document without reinjection.
   window.addEventListener("pageshow", event => {
     if (event.persisted) {
       connect();
