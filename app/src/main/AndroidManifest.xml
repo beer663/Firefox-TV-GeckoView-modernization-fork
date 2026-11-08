@@ -2,34 +2,31 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          xmlns:tools="http://schemas.android.com/tools"
-          xmlns:amazon="http://schemas.amazon.com/apk/res/android">
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:amazon="http://schemas.amazon.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" /> <!-- Used by sentry. -->
-
-    <!-- Required for media playback voice control.
-           https://developer.amazon.com/blogs/appstore/post/623addd5-6184-4e7f-a969-123a653cfb1a/implementing-voice-control-with-the-media-session-api-on-amazon-fire-tv -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="com.amazon.permission.media.session.voicecommandcontrol" />
 
-    <!-- *** ADM permissions start *** -->
-    <!-- This permission ensures that no other application can intercept your ADM messages. -->
     <permission
         android:name="${applicationId}.permission.RECEIVE_ADM_MESSAGE"
-        android:protectionLevel="signature"/>
+        android:protectionLevel="signature" />
 
     <uses-permission android:name="${applicationId}.permission.RECEIVE_ADM_MESSAGE" />
     <uses-permission android:name="com.amazon.device.messaging.permission.RECEIVE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- This permission is also brought in by androidx.work:work-runtime dependency. -->
-    <uses-permission android:name="android.permission.WAKE_LOCK"/>
-    <!-- *** ADM permissions end *** -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
 
-    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
-    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="true" />
 
-    <!-- Attribute usesCleartextTraffic requires API 23+, tools:ignore="UnusedAttribute" for lint check-->
     <application
         android:allowBackup="false"
         android:banner="@mipmap/ic_launcher"
@@ -46,26 +43,29 @@
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
+
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/provider_paths"/>
+                android:resource="@xml/provider_paths" />
         </provider>
 
-        <activity android:name="org.mozilla.focus.MainActivity"
+        <activity
+            android:name="org.mozilla.focus.MainActivity"
             android:launchMode="singleTask"
             android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize|locale|layoutDirection|smallestScreenSize|screenLayout"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden"
             android:label="@string/app_name">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
             <intent-filter>
@@ -82,9 +82,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="http" />
                 <data android:scheme="https" />
-                <data android:mimeType="text/html"/>
-                <data android:mimeType="text/plain"/>
-                <data android:mimeType="application/xhtml+xml"/>
+                <data android:mimeType="text/html" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/xhtml+xml" />
             </intent-filter>
 
             <intent-filter>
@@ -95,11 +95,17 @@
         </activity>
 
         <activity
+            android:name="org.mozilla.focus.diagnostics.PlaybackDiagnosticsActivity"
+            android:exported="false"
+            android:label="@string/playback_diagnostics_title" />
+
+        <activity
             android:name="org.mozilla.focus.extensions.ExtensionsActivity"
             android:exported="false"
             android:label="@string/extensions_menu_title" />
 
-        <activity android:name="org.mozilla.focus.browser.InfoActivity"
+        <activity
+            android:name="org.mozilla.focus.browser.InfoActivity"
             android:exported="false" />
 
         <activity
@@ -115,6 +121,7 @@
         <activity
             android:name="com.google.android.gms.oss.licenses.OssLicensesMenuActivity"
             android:exported="false" />
+
         <activity
             android:name="com.google.android.gms.oss.licenses.OssLicensesActivity"
             android:exported="false" />
@@ -124,43 +131,25 @@
             android:exported="false"
             android:theme="@style/AppTheme.Transparent" />
 
-        <!-- *** ADM app components start *** -->
-        <!-- When required is false, graceful degradation is required. If true, APK will not be available to devices not supporting ADM. -->
         <amazon:enable-feature
             android:name="com.amazon.device.messaging"
-            android:required="false"/>
+            android:required="false" />
+
         <service
             android:name=".fxa.ADMService"
-            android:exported="false"/>
+            android:exported="false" />
+
         <receiver
             android:name=".fxa.ADMReceiver"
             android:permission="com.amazon.device.messaging.permission.SEND">
-            <!-- To interact with ADM, your app must listen for the following intents. -->
+
             <intent-filter>
                 <action android:name="com.amazon.device.messaging.intent.REGISTRATION" />
                 <action android:name="com.amazon.device.messaging.intent.RECEIVE" />
                 <category android:name="${applicationId}" />
             </intent-filter>
         </receiver>
-        <!-- *** ADM attrs end *** -->
 
-        <!-- Allows MediaSessionCallbacks to be called while a voice command is active. Without
-             this, the video pauses for the voice command, resumes when the voice command ends, and
-             then MediaSessionCallbacks can be executed (e.g. pausing the video again for a pause
-             command). For docs, see:
-               https://developer.amazon.com/docs/fire-tv/mediasession-api-integration.html#enhanced-experience-for-voice-enabled-playback-controls-using-media-session-optional
-
-             Unfortunately, in practice, we can't stop the video from playing after a voice command:
-             see `VideoVoiceCommandMediaSession.MediaSessionCallbacks.onPause`.
-
-             We add this meta-data tag anyway because:
-             - On Cube, it sometimes decreases the playing time in pause-playing-pause by a few hundred milliseconds
-             - This "execute callbacks during a voice command" is the default behavior on the 4K but
-               not the Cube. Adding this flag allows us to opt into this behavior on the Cube,
-               reducing our device fragmentation.
-
-             Unfortunately, this opt-in behavior is more fragile than not opting in (see the code
-             mentioned above for details). -->
         <meta-data
             android:name="com.amazon.voice.supports_background_media_session"
             android:value="true" />
@@ -169,12 +158,5 @@
             android:name="android.webkit.WebView.MetricsOptOut"
             android:value="true" />
 
-        <!-- Turn of temporarily #1504
-        <meta-data
-            android:name="whisperplay"
-            android:resource="@xml/whisperplay"/>
-            -->
-
     </application>
-
 </manifest>
