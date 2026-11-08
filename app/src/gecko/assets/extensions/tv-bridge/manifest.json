@@ -1,0 +1,31 @@
+{
+  "manifest_version": 2,
+  "name": "Firefox TV page controls",
+  "version": "1.0.0",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tv-page-controls@firefox-tv.local"
+    }
+  },
+  "permissions": [
+    "nativeMessaging",
+    "nativeMessagingFromContent",
+    "geckoViewAddons",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}
