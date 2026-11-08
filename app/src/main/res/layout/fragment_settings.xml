@@ -2,7 +2,6 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:orientation="vertical"
@@ -15,20 +14,37 @@
         android:layout_height="wrap_content"
         android:text="@string/menu_settings"
         android:textSize="45sp"
-        android:layout_marginStart="30dp"/>
+        android:layout_marginStart="30dp" />
 
-    <!-- Remote-focusable Extensions entry; no extension is installed at launch. -->
-    <Button
-        android:id="@+id/extensionsButton"
-        android:layout_width="360dp"
-        android:layout_height="64dp"
-        android:layout_marginStart="30dp"
-        android:layout_marginTop="12dp"
-        android:text="@string/extensions_menu_title"
-        android:textAllCaps="false"
-        android:textSize="22sp"
-        android:focusable="true"
-        android:clickable="true" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/extensionsButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="64dp"
+            android:layout_marginStart="30dp"
+            android:layout_marginTop="12dp"
+            android:text="@string/extensions_menu_title"
+            android:textAllCaps="false"
+            android:textSize="22sp"
+            android:focusable="true" />
+
+        <Button
+            android:id="@+id/playbackDiagnosticsButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="64dp"
+            android:layout_marginEnd="30dp"
+            android:layout_marginTop="12dp"
+            android:text="@string/playback_diagnostics_title"
+            android:textAllCaps="false"
+            android:textSize="22sp"
+            android:focusable="true" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -36,39 +52,24 @@
         android:layout_weight="1"
         android:layout_gravity="center">
 
-        <!-- a11y: we want to select the whole container when VoiceView is disabled. When VoiceView
-             is enabled, we want to announce, "TextView text, checkbox: (not) checked". However,
-             focusing the container will not announce the CheckBox state [1]. Therefore, we do the
-             following to focus the container without a11y and the CheckBox with a11y:
-             - Set the CheckBox important for a11y - in theroy, this makes it focusable with VoiceView
-             - Dynamically enable/disable focusable and change focus for the container when
-             VoiceView is enabled/disabled - the parent being focusable will prevent the children
-             from getting focused so, in practice, this makes the CheckBox focusable with VoiceView.
-             - Set the contentDescription of the CheckBox to the text of the TextView
-
-             Note: with VoiceView enabled, we sacrifice visual consistency (of which element is
-             highlighted) for functionality. I tried solutions that would avoid this using
-             AccessibiltyDelegate to override the parent announcements but they did not work with
-             VoiceView even though they worked with TalkBack. To save time, I implemented this instead.
-
-             [1]: Probably because in Android's view, the CheckBox can only change if it's directly
-             focused but we override that. -->
         <LinearLayout
+            android:id="@+id/telemetryView"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:id="@+id/telemetryView"
             android:background="@drawable/settings_item_selector"
             android:focusable="true"
             android:layout_gravity="center_vertical">
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/preference_mozilla_telemetry2"
                 android:layout_gravity="center"
                 android:layout_marginBottom="15dp"
-                android:textSize="25sp"/>
+                android:textSize="25sp" />
+
             <CheckBox
                 android:id="@+id/telemetryButton"
                 android:layout_width="128dp"
@@ -78,8 +79,9 @@
                 android:button="@null"
                 android:importantForAccessibility="yes"
                 android:contentDescription="@string/preference_mozilla_telemetry2"
-                android:layout_gravity="center"/>
-            <requestFocus/> <!-- Focuses CheckBox when a11y enabled, parent when not enabled. -->
+                android:layout_gravity="center" />
+
+            <requestFocus />
         </LinearLayout>
 
         <LinearLayout
@@ -92,6 +94,7 @@
             android:focusable="true"
             android:clickable="true"
             android:layout_gravity="center_vertical">
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -99,12 +102,13 @@
                 android:layout_gravity="center"
                 android:textSize="25sp"
                 android:layout_marginBottom="15dp" />
+
             <ImageView
                 android:layout_width="128dp"
                 android:layout_height="128dp"
                 android:src="@drawable/ic_about"
                 android:scaleType="fitCenter"
-                android:layout_gravity="center"/>
+                android:layout_gravity="center" />
         </LinearLayout>
 
         <LinearLayout
@@ -117,15 +121,15 @@
             android:clickable="true"
             android:focusable="true"
             android:orientation="vertical">
+
             <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/preference_privacy_notice"
-                    android:layout_gravity="center"
-                    android:textSize="25sp"
-                    android:layout_marginBottom="15dp" />
-            <!-- We set the image resource dynamically because on lower API versions
-            it turns out distorted when set in the XML -->
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/preference_privacy_notice"
+                android:layout_gravity="center"
+                android:layout_marginBottom="15dp"
+                android:textSize="25sp" />
+
             <ImageView
                 android:id="@+id/ic_lock"
                 android:layout_width="128dp"
@@ -164,11 +168,14 @@
         </LinearLayout>
 
     </LinearLayout>
-    <view class="org.mozilla.focus.iwebview.WebViewProvider$GeckoWebView"
+
+    <view
+        class="org.mozilla.focus.iwebview.WebViewProvider$GeckoWebView"
         android:id="@+id/settingsWebView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scrollbarThumbVertical="@drawable/scrollbar_thumb"
         android:visibility="gone">
     </view>
+
 </LinearLayout>
