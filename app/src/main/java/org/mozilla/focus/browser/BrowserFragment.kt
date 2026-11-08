@@ -4,17 +4,18 @@
 
 package org.mozilla.focus.browser
 
-import androidx.lifecycle.Observer
 import android.os.Bundle
-import androidx.annotation.UiThread
 import android.text.TextUtils
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.annotation.UiThread
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.Observer
 import org.mozilla.focus.MainActivity
-import org.mozilla.tv.firefox.R
 import org.mozilla.focus.ScreenController
 import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.cursor.CursorController
@@ -34,57 +35,57 @@ import org.mozilla.focus.telemetry.UrlTextInputLocation
 import org.mozilla.focus.utils.OnUrlEnteredListener
 import org.mozilla.focus.utils.ViewUtils.showCenteredTopToast
 import org.mozilla.focus.widget.InlineAutocompleteEditText
+import org.mozilla.tv.firefox.R
 
 private const val ARGUMENT_SESSION_UUID = "sessionUUID"
-
 private const val TOAST_Y_OFFSET = 200
 
-/**
- * Fragment for displaying the browser UI.
- */
 class BrowserFragment : IWebViewLifecycleFragment() {
     companion object {
         const val FRAGMENT_TAG = "browser"
 
         @JvmStatic
         fun createForSession(session: Session) = BrowserFragment().apply {
-            arguments = Bundle().apply { putString(ARGUMENT_SESSION_UUID, session.uuid) }
+            arguments = Bundle().apply {
+                putString(ARGUMENT_SESSION_UUID, session.uuid)
+            }
         }
     }
 
-    // IWebViewLifecycleFragment expects a value for these properties before onViewCreated. We use a getter
-    // for the properties that reference session because it is lateinit.
     override lateinit var session: Session
     override val initialUrl get() = session.url.value
-    override val iWebViewCallback get() = SessionCallbackProxy(session, BrowserIWebViewCallback(this))
 
-    /**
-     * The current URL.
-     *
-     * Use this instead of the WebView's URL which can return null, return a null URL, or return
-     * data: URLs (for error pages).
-     */
+    override val iWebViewCallback
+        get() = SessionCallbackProxy(session, BrowserIWebViewCallback(this))
+
     var url: String? = null
         private set
 
     private val sessionManager = SessionManager.getInstance()
 
-    /**
-     * Encapsulates the cursor's components. If this value is null, the Cursor is not attached
-     * to the view hierarchy.
-     */
     internal val browserOverlay: BrowserNavigationOverlay
         get() = requireView().findViewById(R.id.browserOverlay)
+
     internal val browserContainer: View
         get() = requireView().findViewById(R.id.browserContainer)
+
     internal val videoContainer: FrameLayout
         get() = requireView().findViewById(R.id.videoContainer)
 
     var cursor: CursorController? = null
-        @UiThread get set // Set from the UI thread so serial access is required for simplicity.
+        @UiThread get set
 
-    // Cache the overlay visibility state to persist in fragment back stack
     private var overlayVisibleCached: Int? = null
+    private val navigationState = BrowserNavigationState()
+
+    internal val isInFullscreen: Boolean
+        get() = navigationState.isFullscreen
+
+    private val fullscreenChrome = mutableMapOf<View, Int>()
+    private var overlayBeforeFullscreen = View.GONE
+    private var systemUiBeforeFullscreen: Int? = null
+    private var keepScreenOnBeforeFullscreen = false
+    private var showMenuAfterFullscreen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,223 +94,501 @@ class BrowserFragment : IWebViewLifecycleFragment() {
 
     private fun initSession() {
         val sessionUUID = requireArguments().getString(ARGUMENT_SESSION_UUID)
-                ?: throw IllegalAccessError("No session exists")
-        session = if (sessionManager.hasSessionWithUUID(sessionUUID))
+            ?: throw IllegalAccessError("No session exists")
+
+        session = if (sessionManager.hasSessionWithUUID(sessionUUID)) {
             sessionManager.getSessionByUUID(sessionUUID)
-        else
+        } else {
             NullSession()
+        }
 
         webView?.setBlockingEnabled(session.isBlockingEnabled)
-        session.url.observe(this, Observer { url -> this@BrowserFragment.url = url })
+
+        session.url.observe(this, Observer { url ->
+            this@BrowserFragment.url = url
+        })
+
         session.loading.observe(this, object : NonNullObserver<Boolean>() {
             public override fun onValueChanged(loading: Boolean) {
-                // Update state on load start and finish to ensure buttons are updated correctly
-                view?.findViewById<BrowserNavigationOverlay>(R.id.browserOverlay)?.let { overlay ->
-                    if (overlay.isVisible) overlay.updateOverlayForCurrentState()
+                view?.findViewById<BrowserNavigationOverlay>(
+                    R.id.browserOverlay
+                )?.let { overlay ->
+                    if (overlay.isVisible) {
+                        overlay.updateOverlayForCurrentState()
+                    }
                 }
             }
         })
     }
 
-    private val onNavigationEvent = { event: NavigationEvent, value: String?,
-            autocompleteResult: InlineAutocompleteEditText.AutocompleteResult? ->
+    private val onNavigationEvent = {
+        event: NavigationEvent,
+        value: String?,
+        autocompleteResult: InlineAutocompleteEditText.AutocompleteResult? ->
+
         when (event) {
-            NavigationEvent.BACK -> if (webView?.canGoBack() ?: false) webView?.goBack()
-            NavigationEvent.FORWARD -> if (webView?.canGoForward() ?: false) webView?.goForward()
-            NavigationEvent.TURBO, NavigationEvent.RELOAD -> webView?.reload()
-            NavigationEvent.HOME -> ScreenController.showHomeScreen(parentFragmentManager, requireActivity() as OnUrlEnteredListener)
-            NavigationEvent.SETTINGS -> ScreenController.showSettingsScreen(parentFragmentManager)
+            NavigationEvent.BACK -> {
+                if (webView?.canGoBack() == true) {
+                    webView?.goBack()
+                }
+            }
+
+            NavigationEvent.FORWARD -> {
+                if (webView?.canGoForward() == true) {
+                    webView?.goForward()
+                }
+            }
+
+            NavigationEvent.TURBO,
+            NavigationEvent.RELOAD -> webView?.reload()
+
+            NavigationEvent.HOME -> {
+                ScreenController.showHomeScreen(
+                    parentFragmentManager,
+                    requireActivity() as OnUrlEnteredListener
+                )
+            }
+
+            NavigationEvent.SETTINGS -> {
+                ScreenController.showSettingsScreen(parentFragmentManager)
+            }
+
             NavigationEvent.LOAD -> {
-                (activity as MainActivity).onTextInputUrlEntered(value!!, autocompleteResult!!, UrlTextInputLocation.MENU)
+                (activity as MainActivity).onTextInputUrlEntered(
+                    value!!,
+                    autocompleteResult!!,
+                    UrlTextInputLocation.MENU
+                )
                 setOverlayVisibileByUser(false)
             }
+
             NavigationEvent.PIN_ACTION -> {
-                this@BrowserFragment.url?.let { url ->
+                this@BrowserFragment.url?.let { currentUrl ->
                     when (value) {
                         NavigationEvent.VAL_CHECKED -> {
-                            CustomTilesManager.getInstance(requireContext()).pinSite(requireContext(), url,
-                                    webView?.takeScreenshot())
-                            showCenteredTopToast(requireContext(), R.string.notification_pinned_site, 0, TOAST_Y_OFFSET)
+                            CustomTilesManager.getInstance(requireContext())
+                                .pinSite(
+                                    requireContext(),
+                                    currentUrl,
+                                    webView?.takeScreenshot()
+                                )
+
+                            showCenteredTopToast(
+                                requireContext(),
+                                R.string.notification_pinned_site,
+                                0,
+                                TOAST_Y_OFFSET
+                            )
                         }
+
                         NavigationEvent.VAL_UNCHECKED -> {
-                            url.toUri()?.let {
-                                if (BundledTilesManager.getInstance(requireContext()).unpinSite(requireContext(), it)
-                                        || CustomTilesManager.getInstance(requireContext()).unpinSite(requireContext(), url)) {
-                                    showCenteredTopToast(requireContext(), R.string.notification_unpinned_site, 0, TOAST_Y_OFFSET)
+                            currentUrl.toUri()?.let { uri ->
+                                val removed =
+                                    BundledTilesManager.getInstance(
+                                        requireContext()
+                                    ).unpinSite(requireContext(), uri) ||
+                                    CustomTilesManager.getInstance(
+                                        requireContext()
+                                    ).unpinSite(requireContext(), currentUrl)
+
+                                if (removed) {
+                                    showCenteredTopToast(
+                                        requireContext(),
+                                        R.string.notification_unpinned_site,
+                                        0,
+                                        TOAST_Y_OFFSET
+                                    )
                                 }
                             }
                         }
-                        else -> throw IllegalArgumentException("Unexpected value for PIN_ACTION: " + value)
+
+                        else -> throw IllegalArgumentException(
+                            "Unexpected value for PIN_ACTION: $value"
+                        )
                     }
                 }
             }
         }
+
         Unit
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        val layout = inflater.inflate(R.layout.fragment_browser, container, false)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
+        val layout = inflater.inflate(
+            R.layout.fragment_browser,
+            container,
+            false
+        )
 
-        cursor = CursorController(this, cursorParent = layout.findViewById(R.id.browserFragmentRoot),
-                view = layout.findViewById<CursorView>(R.id.cursorView))
+        cursor = CursorController(
+            this,
+            cursorParent = layout.findViewById(R.id.browserFragmentRoot),
+            view = layout.findViewById<CursorView>(R.id.cursorView)
+        )
+
         lifecycle.addObserver(cursor!!)
 
-        with (layout.findViewById<BrowserNavigationOverlay>(R.id.browserOverlay)) {
+        with(
+            layout.findViewById<BrowserNavigationOverlay>(R.id.browserOverlay)
+        ) {
             onNavigationEvent = this@BrowserFragment.onNavigationEvent
             navigationStateProvider = NavigationStateProvider()
             visibility = overlayVisibleCached ?: View.GONE
+
             onPreSetVisibilityListener = { isVisible ->
-                // The overlay can clear the DOM and a previous focused element cache (e.g. reload)
-                // so we need to do our own caching: see FocusedDOMElementCache for details.
-                if (!isVisible) { webView?.focusedDOMElement?.cache() }
+                if (!isVisible) {
+                    webView?.focusedDOMElement?.cache()
+                }
             }
         }
 
-        layout.findViewById<FirefoxProgressBar>(R.id.progressBar).initialize(this)
+        layout.findViewById<FirefoxProgressBar>(
+            R.id.progressBar
+        ).initialize(this)
 
         return layout
     }
 
     override fun onDestroyView() {
-        overlayVisibleCached = view?.findViewById<BrowserNavigationOverlay>(R.id.browserOverlay)?.visibility
+        navigationState.requestFullscreenExit()
+        finishFullscreen(restoreFocus = false)
+        navigationState.reset()
+
+        overlayVisibleCached = view
+            ?.findViewById<BrowserNavigationOverlay>(R.id.browserOverlay)
+            ?.visibility
+
+        cursor?.onPause()
         cursor?.let(lifecycle::removeObserver)
         cursor = null
+
         super.onDestroyView()
     }
 
     fun onBackPressed(): Boolean {
         when {
-            webView?.canGoBack() ?: false -> {
+            navigationState.requestFullscreenExit() -> Unit
+
+            browserOverlay.isVisible -> {
+                setOverlayVisibileByUser(false)
+            }
+
+            webView?.canGoBack() == true -> {
                 webView?.goBack()
                 TelemetryWrapper.browserBackControllerEvent()
             }
-            browserOverlay.isVisible -> setOverlayVisibileByUser(false)
+
             else -> {
                 parentFragmentManager.popBackStack()
                 SessionManager.getInstance().removeCurrentSession()
             }
         }
+
         return true
     }
 
     fun loadUrl(url: String) {
-        val webView = webView
-        if (webView != null && !TextUtils.isEmpty(url)) {
-            webView.loadUrl(url)
+        val page = webView
+
+        if (page != null && !TextUtils.isEmpty(url)) {
+            page.loadUrl(url)
         }
     }
 
     fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        /**
-         * Key handling order:
-         * - Menu to control overlay
-         * - Youtube remap of BACK to ESC
-         * - Cursor
-         * - Return false, as unhandled
-         */
-        return (handleSpecialKeyEvent(event)) ||
-                (cursor?.keyDispatcher?.dispatchKeyEvent(event) ?: false)
+        if (view == null) return false
+
+        return handleSpecialKeyEvent(event) ||
+            (cursor?.keyDispatcher?.dispatchKeyEvent(event) ?: false)
     }
 
     private fun handleSpecialKeyEvent(event: KeyEvent): Boolean {
-        val keyCodeIsMenu = event.keyCode == KeyEvent.KEYCODE_MENU
-        val keyCodeIsBack = event.keyCode == KeyEvent.KEYCODE_BACK
-        val actionIsDown = event.action == KeyEvent.ACTION_DOWN
-        val isOverlayToggleKey = (keyCodeIsMenu || (keyCodeIsBack && browserOverlay.isVisible))
-
-        if (isOverlayToggleKey) {
-            if (actionIsDown) {
-                val toShow = !browserOverlay.isVisible
-                setOverlayVisibileByUser(toShow)
-                // Fix this youtube focus hack in #393
-                if (!toShow && webView!!.isYoutubeTV) {
-                    webView?.requestFocus()
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            val consumed = when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    navigationState.onBackDown(browserOverlay.isVisible) {
+                        setOverlayVisibileByUser(false)
+                    }
                 }
+
+                KeyEvent.ACTION_UP -> navigationState.onBackUp()
+                else -> false
             }
+
+            if (consumed) return true
+        }
+
+        if (event.keyCode == KeyEvent.KEYCODE_MENU) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    navigationState.onMenuDown {
+                        if (isInFullscreen) {
+                            showMenuAfterFullscreen = true
+                            navigationState.requestFullscreenExit()
+                        } else {
+                            setOverlayVisibileByUser(!browserOverlay.isVisible)
+                        }
+                    }
+                }
+
+                KeyEvent.ACTION_UP -> navigationState.onMenuUp()
+            }
+
             return true
         }
 
-        if (!browserOverlay.isVisible && webView!!.isYoutubeTV &&
-                event.keyCode == KeyEvent.KEYCODE_BACK) {
-            val escKeyEvent = KeyEvent(event.action, KeyEvent.KEYCODE_ESCAPE)
-            requireActivity().dispatchKeyEvent(escKeyEvent)
+        if (
+            !browserOverlay.isVisible &&
+            webView?.isYoutubeTV == true &&
+            event.keyCode == KeyEvent.KEYCODE_BACK
+        ) {
+            val escape = KeyEvent(
+                event.downTime,
+                event.eventTime,
+                event.action,
+                KeyEvent.KEYCODE_ESCAPE,
+                event.repeatCount,
+                event.metaState,
+                event.deviceId,
+                event.scanCode,
+                event.flags,
+                event.source
+            )
+
+            requireActivity().dispatchKeyEvent(escape)
             return true
         }
+
         return false
     }
 
-    /**
-     * Changes the overlay visibility: this should be called instead of changing
-     * [BrowserNavigationOverlay.isVisible] directly.
-     *
-     * It's important this is only called for user actions because our Telemetry
-     * is dependent on it.
-     */
-    private fun setOverlayVisibileByUser(toShow: Boolean) {
-        browserOverlay.visibility = if (toShow) View.VISIBLE else View.GONE
-        if (toShow) cursor?.onPause() else cursor?.onResume()
+    private fun updateCursorState() {
         cursor?.setEnabledForCurrentState()
+
+        if (
+            !isInFullscreen &&
+            !browserOverlay.isVisible &&
+            lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        ) {
+            cursor?.onResume()
+        } else {
+            cursor?.onPause()
+        }
+    }
+
+    private fun restorePageFocus() {
+        val root = view ?: return
+        val page = webView ?: return
+
+        page.requestFocus()
+
+        root.post {
+            if (
+                view === root &&
+                webView === page &&
+                !isInFullscreen &&
+                !browserOverlay.isVisible
+            ) {
+                page.focusedDOMElement.restore()
+            }
+        }
+    }
+
+    private fun setOverlayVisibileByUser(toShow: Boolean) {
+        if (toShow) {
+            webView?.focusedDOMElement?.cache()
+        }
+
+        browserOverlay.visibility =
+            if (toShow) View.VISIBLE else View.GONE
+
+        updateCursorState()
+
+        if (toShow) {
+            browserOverlay.updateOverlayForCurrentState()
+            browserOverlay.requestFocus()
+        } else {
+            restorePageFocus()
+        }
+
         TelemetryWrapper.drawerShowHideEvent(toShow)
     }
 
-    private inner class NavigationStateProvider : BrowserNavigationOverlay.BrowserNavigationStateProvider {
-        override fun isBackEnabled() = webView?.canGoBack() ?: false
-        override fun isForwardEnabled() = webView?.canGoForward() ?: false
+    internal fun enterFullscreen(
+        exit: IWebView.FullscreenCallback,
+        videoView: View?
+    ) {
+        val root = view
+
+        if (root == null) {
+            exit.fullScreenExited()
+            return
+        }
+
+        if (!isInFullscreen) {
+            overlayBeforeFullscreen = browserOverlay.visibility
+
+            for (
+                id in intArrayOf(
+                    R.id.bannerLayout,
+                    R.id.hintBarContainer,
+                    R.id.progressBar
+                )
+            ) {
+                root.findViewById<View>(id)?.let {
+                    fullscreenChrome[it] = it.visibility
+                }
+            }
+
+            activity?.window?.let { window ->
+                systemUiBeforeFullscreen =
+                    window.decorView.systemUiVisibility
+
+                keepScreenOnBeforeFullscreen =
+                    window.attributes.flags and
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
+
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                )
+
+                window.decorView.systemUiVisibility =
+                    window.decorView.systemUiVisibility or
+                        View.SYSTEM_UI_FLAG_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            }
+        }
+
+        navigationState.enterFullscreen {
+            exit.fullScreenExited()
+        }
+
+        webView?.focusedDOMElement?.cache()
+        browserOverlay.visibility = View.GONE
+        fullscreenChrome.keys.forEach { it.visibility = View.GONE }
+        videoContainer.removeAllViews()
+
+        if (videoView == null) {
+            // Gecko renders fullscreen video in the existing GeckoView.
+            browserContainer.visibility = View.VISIBLE
+            videoContainer.visibility = View.GONE
+            webView?.requestFocus()
+        } else {
+            browserContainer.visibility = View.INVISIBLE
+
+            videoContainer.addView(
+                videoView,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+
+            videoContainer.visibility = View.VISIBLE
+            videoView.requestFocus()
+        }
+
+        updateCursorState()
+    }
+
+    internal fun finishFullscreen(restoreFocus: Boolean = true) {
+        if (!navigationState.onFullscreenExit()) return
+
+        val root = view
+
+        if (root != null) {
+            videoContainer.removeAllViews()
+            videoContainer.visibility = View.GONE
+            browserContainer.visibility = View.VISIBLE
+
+            fullscreenChrome.forEach { (chrome, visibility) ->
+                chrome.visibility = visibility
+            }
+
+            browserOverlay.visibility = if (showMenuAfterFullscreen) {
+                View.VISIBLE
+            } else {
+                overlayBeforeFullscreen
+            }
+        }
+
+        fullscreenChrome.clear()
+
+        activity?.window?.let { window ->
+            systemUiBeforeFullscreen?.let {
+                window.decorView.systemUiVisibility = it
+            }
+
+            if (!keepScreenOnBeforeFullscreen) {
+                window.clearFlags(
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                )
+            }
+        }
+
+        systemUiBeforeFullscreen = null
+        showMenuAfterFullscreen = false
+
+        if (root != null && restoreFocus) {
+            updateCursorState()
+
+            if (browserOverlay.isVisible) {
+                browserOverlay.updateOverlayForCurrentState()
+                browserOverlay.requestFocus()
+            } else {
+                restorePageFocus()
+            }
+        }
+
+        // Gecko already exited; do not call the exit callback again.
+    }
+
+    private inner class NavigationStateProvider :
+        BrowserNavigationOverlay.BrowserNavigationStateProvider {
+
+        override fun isBackEnabled() =
+            webView?.canGoBack() ?: false
+
+        override fun isForwardEnabled() =
+            webView?.canGoForward() ?: false
+
         override fun getCurrentUrl() = url
+
         override fun isURLPinned() = url.toUri()?.let {
-            // TODO: #569 fix CustomTilesManager to use Uri too
-            CustomTilesManager.getInstance(requireContext()).isURLPinned(it.toString()) ||
-                    BundledTilesManager.getInstance(requireContext()).isURLPinned(it) } ?: false
+            CustomTilesManager.getInstance(
+                requireContext()
+            ).isURLPinned(it.toString()) ||
+                BundledTilesManager.getInstance(
+                    requireContext()
+                ).isURLPinned(it)
+        } ?: false
     }
 }
 
 private class BrowserIWebViewCallback(
-        private val browserFragment: BrowserFragment
+    private val browserFragment: BrowserFragment
 ) : IWebView.Callback {
-
-    private var fullscreenCallback: IWebView.FullscreenCallback? = null
-
     override fun onPageStarted(url: String) {}
-
     override fun onPageFinished(isSecure: Boolean) {}
     override fun onProgress(progress: Int) {}
-
     override fun onURLChanged(url: String) {}
     override fun onRequest(isTriggeredByUserGesture: Boolean) {}
-
     override fun onBlockingStateChanged(isBlockingEnabled: Boolean) {}
-
     override fun onLongPress(hitTarget: IWebView.HitTarget) {}
 
-    override fun onEnterFullScreen(callback: IWebView.FullscreenCallback, view: View?) {
-        fullscreenCallback = callback
-        if (view == null) {
-            // GeckoView renders fullscreen inside the existing engine view.
-            browserFragment.browserOverlay.visibility = View.GONE
-            browserFragment.cursor?.onPause()
-            return
-        }
-
-        with (browserFragment) {
-            // Hide browser UI and web content
-            browserContainer.visibility = View.INVISIBLE
-
-            val params = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            videoContainer.addView(view, params)
-            videoContainer.visibility = View.VISIBLE
-        }
+    override fun onEnterFullScreen(
+        callback: IWebView.FullscreenCallback,
+        view: View?
+    ) {
+        browserFragment.enterFullscreen(callback, view)
     }
 
     override fun onExitFullScreen() {
-        with (browserFragment) {
-            videoContainer.removeAllViews()
-            videoContainer.visibility = View.GONE
-
-            browserContainer.visibility = View.VISIBLE
-        }
-
-        fullscreenCallback?.fullScreenExited()
-        fullscreenCallback = null
+        browserFragment.finishFullscreen()
     }
 }
