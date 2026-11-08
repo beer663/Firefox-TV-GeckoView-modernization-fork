@@ -9,6 +9,9 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
@@ -23,6 +26,7 @@ import java.util.WeakHashMap;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.mozilla.focus.browser.LocalizedContent;
+import org.mozilla.focus.diagnostics.PlaybackDiagnostics;
 import org.mozilla.focus.session.Session;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
@@ -36,14 +40,15 @@ import org.mozilla.geckoview.WebExtension;
 /** Bridges the original TV IWebView frontend onto GeckoView. */
 public final class WebViewProvider {
     private static final String TAG = "TVGeckoAdapter";
-    private static final String BRIDGE_ID = "tv-page-controls@firefox-tv.local";
+    private static final String BRIDGE_ID =
+            "tv-page-controls@firefox-tv.local";
 
     private static GeckoRuntime runtime;
     private static GeckoResult<WebExtension> bridgeResult;
 
-    // Accessed on the Android UI thread.
     private static final Set<GeckoWebView> liveViews =
-            Collections.newSetFromMap(new WeakHashMap<GeckoWebView, Boolean>());
+            Collections.newSetFromMap(
+                    new WeakHashMap<GeckoWebView, Boolean>());
 
     private WebViewProvider() {}
 
@@ -57,10 +62,10 @@ public final class WebViewProvider {
                     "resource://android/assets/extensions/tv-bridge/",
                     BRIDGE_ID);
         }
+
         return runtime;
     }
 
-    /** Browsing and the Extensions screen share this runtime and profile. */
     public static GeckoRuntime getRuntime(Context context) {
         return runtime(context);
     }
@@ -83,10 +88,12 @@ public final class WebViewProvider {
     public static void performCleanup(Context context) {
         clearBrowsingData(context).accept(
                 ignored -> {},
-                error -> Log.e(TAG, "Could not clear browsing data", error));
+                error -> Log.e(
+                        TAG,
+                        "Could not clear browsing data",
+                        error));
     }
 
-    /** Close sessions before clearing data so open pages cannot recreate it. */
     public static GeckoResult<Void> clearBrowsingData(Context context) {
         GeckoRuntime currentRuntime = runtime(context);
 
@@ -107,9 +114,14 @@ public final class WebViewProvider {
         // GeckoRuntime owns process and profile cleanup.
     }
 
-    public static class GeckoWebView extends NestedGeckoView implements IWebView {
-        private static final String STATE_KEY = "firefox.tv.gecko.sessionState";
-        private static final String URL_KEY = "firefox.tv.gecko.url";
+    public static class GeckoWebView
+            extends NestedGeckoView implements IWebView {
+
+        private static final String STATE_KEY =
+                "firefox.tv.gecko.sessionState";
+
+        private static final String URL_KEY =
+                "firefox.tv.gecko.url";
 
         private final GeckoSession geckoSession;
         private Callback callback;
@@ -127,7 +139,74 @@ public final class WebViewProvider {
         private Runnable pendingNavigation;
         private WebExtension.Port pagePort;
 
-        private final List<JSONObject> pendingCommands = new ArrayList<>();
+        private final List<JSONObject> pendingCommands =
+                new ArrayList<>();
+
+        private final Handler diagnosticsHandler =
+                new Handler(Looper.getMainLooper());
+
+        private final Runnable diagnosticsListener =
+                this::updateDiagnosticsSampling;
+
+        private boolean diagnosticsForeground;
+        private long nextSampleId;
+        private long pendingSampleId;
+        private long pendingSampleEpoch;
+        private long sampleRequestedAt;
+
+        private final Runnable diagnosticsTick = new Runnable() {
+            @Override
+            public void run() {
+                if (destroyed
+                        || !diagnosticsForeground
+                        || !PlaybackDiagnostics.isRecording()
+                        || pagePort == null) {
+                    return;
+                }
+
+                if (
+                        pendingSampleId != 0
+                                && SystemClock.elapsedRealtime()
+                                        - sampleRequestedAt < 6000) {
+                    diagnosticsHandler.postDelayed(this, 2000);
+                    return;
+                }
+
+                if (pendingSampleId != 0) {
+                    PlaybackDiagnostics.recordUnavailable(
+                            pendingSampleEpoch);
+                }
+
+                pendingSampleId = ++nextSampleId;
+                pendingSampleEpoch = PlaybackDiagnostics.epoch();
+                sampleRequestedAt = SystemClock.elapsedRealtime();
+
+                try {
+                    pagePort.postMessage(
+                            new JSONObject()
+                                    .put("action", "collectPlayback")
+                                    .put("id", pendingSampleId));
+                } catch (JSONException | RuntimeException error) {
+                    PlaybackDiagnostics.recordUnavailable(
+                            pendingSampleEpoch);
+                    pendingSampleId = 0;
+                }
+
+                diagnosticsHandler.postDelayed(this, 2000);
+            }
+        };
+
+        private void updateDiagnosticsSampling() {
+            diagnosticsHandler.removeCallbacks(diagnosticsTick);
+            pendingSampleId = 0;
+
+            if (!destroyed
+                    && diagnosticsForeground
+                    && PlaybackDiagnostics.isRecording()
+                    && pagePort != null) {
+                diagnosticsHandler.post(diagnosticsTick);
+            }
+        }
 
         private final FocusedDOMElementCache focusCache =
                 new FocusedDOMElementCache() {
@@ -145,10 +224,12 @@ public final class WebViewProvider {
         private final WebExtension.MessageDelegate bridgeDelegate =
                 new WebExtension.MessageDelegate() {
                     @Override
-                    public void onConnect(@NonNull WebExtension.Port port) {
+                    public void onConnect(
+                            @NonNull WebExtension.Port port) {
                         if (destroyed
                                 || port.sender.session != geckoSession
-                                || !BRIDGE_ID.equals(port.sender.webExtension.id)
+                                || !BRIDGE_ID.equals(
+                                        port.sender.webExtension.id)
                                 || !port.sender.isTopLevel()) {
                             port.disconnect();
                             return;
@@ -156,29 +237,66 @@ public final class WebViewProvider {
 
                         pagePort = port;
 
-                        port.setDelegate(new WebExtension.PortDelegate() {
-                            @Override
-                            public void onDisconnect(
-                                    @NonNull WebExtension.Port disconnected) {
-                                if (pagePort == disconnected) {
-                                    pagePort = null;
-                                }
-                            }
-                        });
+                        port.setDelegate(
+                                new WebExtension.PortDelegate() {
+                                    @Override
+                                    public void onDisconnect(
+                                            @NonNull WebExtension.Port disconnected) {
+                                        if (pagePort == disconnected) {
+                                            pagePort = null;
+                                        }
+                                    }
 
-                        for (JSONObject command : new ArrayList<>(pendingCommands)) {
+                                    @Override
+                                    public void onPortMessage(
+                                            @NonNull Object message,
+                                            @NonNull WebExtension.Port source) {
+                                        if (destroyed
+                                                || source != pagePort
+                                                || !(message instanceof JSONObject)) {
+                                            return;
+                                        }
+
+                                        JSONObject response =
+                                                (JSONObject) message;
+
+                                        if (!"playbackSample".equals(
+                                                response.optString("action"))
+                                                || pendingSampleId == 0
+                                                || response.optLong("id", -1)
+                                                        != pendingSampleId) {
+                                            return;
+                                        }
+
+                                        PlaybackDiagnostics.record(
+                                                pendingSampleEpoch,
+                                                response);
+
+                                        pendingSampleId = 0;
+                                    }
+                                });
+
+                        for (
+                                JSONObject command
+                                : new ArrayList<>(pendingCommands)) {
                             port.postMessage(command);
                         }
 
                         pendingCommands.clear();
+                        updateDiagnosticsSampling();
                     }
                 };
 
-        private void sendCommand(String action, @Nullable String code) {
-            if (destroyed) return;
+        private void sendCommand(
+                String action,
+                @Nullable String code) {
+            if (destroyed) {
+                return;
+            }
 
             try {
-                JSONObject message = new JSONObject().put("action", action);
+                JSONObject message =
+                        new JSONObject().put("action", action);
 
                 if (code != null) {
                     message.put("code", code);
@@ -186,21 +304,25 @@ public final class WebViewProvider {
 
                 if (pagePort != null) {
                     pagePort.postMessage(message);
-                } else if (currentUrl.startsWith("https://")
-                        || currentUrl.startsWith("http://")) {
-                    // Commands are scoped to this page and cleared on navigation.
+                } else if (
+                        currentUrl.startsWith("https://")
+                                || currentUrl.startsWith("http://")) {
                     if (pendingCommands.size() == 32) {
                         pendingCommands.remove(0);
                     }
                     pendingCommands.add(message);
                 }
             } catch (JSONException e) {
-                throw new IllegalArgumentException("Invalid page operation", e);
+                throw new IllegalArgumentException(
+                        "Invalid page operation",
+                        e);
             }
         }
 
         private void navigate(Runnable navigation) {
-            if (destroyed) return;
+            if (destroyed) {
+                return;
+            }
 
             if (bridgeReady) {
                 navigation.run();
@@ -210,13 +332,17 @@ public final class WebViewProvider {
         }
 
         private void saveLatestState() {
-            if (boundSession == null) return;
+            if (boundSession == null) {
+                return;
+            }
 
             Bundle bundle = new Bundle();
             bundle.putString(URL_KEY, currentUrl);
 
             if (latestState != null) {
-                bundle.putString(STATE_KEY, latestState.toString());
+                bundle.putString(
+                        STATE_KEY,
+                        latestState.toString());
             }
 
             boundSession.saveWebViewState(bundle);
@@ -231,162 +357,184 @@ public final class WebViewProvider {
                             .useTrackingProtection(false)
                             .build());
 
-            geckoSession.setProgressDelegate(new GeckoSession.ProgressDelegate() {
-                @Override
-                public void onPageStart(
-                        @NonNull GeckoSession session,
-                        @NonNull String url) {
-                    currentUrl = url;
-                    secure = false;
-                    pagePort = null;
-                    pendingCommands.clear();
-                    lastScreenshot = null;
+            geckoSession.setProgressDelegate(
+                    new GeckoSession.ProgressDelegate() {
+                        @Override
+                        public void onPageStart(
+                                @NonNull GeckoSession session,
+                                @NonNull String url) {
+                            currentUrl = url;
+                            secure = false;
+                            pagePort = null;
+                            pendingCommands.clear();
+                            lastScreenshot = null;
 
-                    if (callback != null) {
-                        callback.onPageStarted(url);
-                    }
-                }
-
-                @Override
-                public void onPageStop(
-                        @NonNull GeckoSession session,
-                        boolean success) {
-                    if (callback != null) {
-                        callback.onProgress(100);
-                        callback.onPageFinished(secure);
-                    }
-
-                    if (success) {
-                        final String capturedUrl = currentUrl;
-
-                        capturePixels().accept(
-                                bitmap -> {
-                                    if (!destroyed && capturedUrl.equals(currentUrl)) {
-                                        lastScreenshot = bitmap;
-                                    }
-                                },
-                                error -> Log.d(
-                                        TAG,
-                                        "Page thumbnail unavailable",
-                                        error));
-                    }
-                }
-
-                @Override
-                public void onSessionStateChange(
-                        @NonNull GeckoSession session,
-                        @NonNull GeckoSession.SessionState state) {
-                    if (destroyed) return;
-
-                    latestState = new GeckoSession.SessionState(state);
-                    saveLatestState();
-                }
-
-                @Override
-                public void onProgressChange(
-                        @NonNull GeckoSession session,
-                        int progress) {
-                    if (callback != null) {
-                        callback.onProgress(progress);
-                    }
-                }
-
-                @Override
-                public void onSecurityChange(
-                        @NonNull GeckoSession session,
-                        @NonNull GeckoSession.ProgressDelegate.SecurityInformation information) {
-                    secure = information.isSecure;
-                }
-            });
-
-            geckoSession.setNavigationDelegate(new GeckoSession.NavigationDelegate() {
-                @Override
-                public void onLocationChange(
-                        @NonNull GeckoSession session,
-                        @Nullable String url,
-                        @NonNull List<GeckoSession.PermissionDelegate.ContentPermission> permissions,
-                        @NonNull Boolean hasUserGesture) {
-                    if (url != null) {
-                        currentUrl = url;
-
-                        if (callback != null) {
-                            callback.onURLChanged(url);
+                            if (callback != null) {
+                                callback.onPageStarted(url);
+                            }
                         }
-                    }
-                }
 
-                @Override
-                public void onCanGoBack(
-                        @NonNull GeckoSession session,
-                        boolean canGoBack) {
-                    backEnabled = canGoBack;
-                }
+                        @Override
+                        public void onPageStop(
+                                @NonNull GeckoSession session,
+                                boolean success) {
+                            if (callback != null) {
+                                callback.onProgress(100);
+                                callback.onPageFinished(secure);
+                            }
 
-                @Override
-                public void onCanGoForward(
-                        @NonNull GeckoSession session,
-                        boolean canGoForward) {
-                    forwardEnabled = canGoForward;
-                }
-            });
+                            if (success) {
+                                final String capturedUrl = currentUrl;
 
-            geckoSession.setContentDelegate(new GeckoSession.ContentDelegate() {
-                @Override
-                public void onTitleChange(
-                        @NonNull GeckoSession session,
-                        @Nullable String newTitle) {
-                    title = newTitle == null ? "" : newTitle;
-                }
+                                capturePixels().accept(
+                                        bitmap -> {
+                                            if (!destroyed
+                                                    && capturedUrl.equals(currentUrl)) {
+                                                lastScreenshot = bitmap;
+                                            }
+                                        },
+                                        error -> Log.d(
+                                                TAG,
+                                                "Page thumbnail unavailable",
+                                                error));
+                            }
+                        }
 
-                @Override
-                public void onFullScreen(
-                        @NonNull GeckoSession session,
-                        boolean fullScreen) {
-                    if (callback == null) return;
+                        @Override
+                        public void onSessionStateChange(
+                                @NonNull GeckoSession session,
+                                @NonNull GeckoSession.SessionState state) {
+                            if (destroyed) {
+                                return;
+                            }
 
-                    if (fullScreen) {
-                        callback.onEnterFullScreen(
-                                () -> geckoSession.exitFullScreen(),
-                                null);
-                    } else {
-                        callback.onExitFullScreen();
-                    }
-                }
-            });
+                            latestState =
+                                    new GeckoSession.SessionState(state);
+
+                            saveLatestState();
+                        }
+
+                        @Override
+                        public void onProgressChange(
+                                @NonNull GeckoSession session,
+                                int progress) {
+                            if (callback != null) {
+                                callback.onProgress(progress);
+                            }
+                        }
+
+                        @Override
+                        public void onSecurityChange(
+                                @NonNull GeckoSession session,
+                                @NonNull GeckoSession.ProgressDelegate.SecurityInformation information) {
+                            secure = information.isSecure;
+                        }
+                    });
+
+            geckoSession.setNavigationDelegate(
+                    new GeckoSession.NavigationDelegate() {
+                        @Override
+                        public void onLocationChange(
+                                @NonNull GeckoSession session,
+                                @Nullable String url,
+                                @NonNull List<GeckoSession.PermissionDelegate.ContentPermission> permissions,
+                                @NonNull Boolean hasUserGesture) {
+                            if (url != null) {
+                                currentUrl = url;
+
+                                if (callback != null) {
+                                    callback.onURLChanged(url);
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void onCanGoBack(
+                                @NonNull GeckoSession session,
+                                boolean canGoBack) {
+                            backEnabled = canGoBack;
+                        }
+
+                        @Override
+                        public void onCanGoForward(
+                                @NonNull GeckoSession session,
+                                boolean canGoForward) {
+                            forwardEnabled = canGoForward;
+                        }
+                    });
+
+            geckoSession.setContentDelegate(
+                    new GeckoSession.ContentDelegate() {
+                        @Override
+                        public void onTitleChange(
+                                @NonNull GeckoSession session,
+                                @Nullable String newTitle) {
+                            title = newTitle == null ? "" : newTitle;
+                        }
+
+                        @Override
+                        public void onFullScreen(
+                                @NonNull GeckoSession session,
+                                boolean fullScreen) {
+                            if (callback == null) {
+                                return;
+                            }
+
+                            if (fullScreen) {
+                                callback.onEnterFullScreen(
+                                        () -> geckoSession.exitFullScreen(),
+                                        null);
+                            } else {
+                                callback.onExitFullScreen();
+                            }
+                        }
+                    });
 
             GeckoRuntime currentRuntime = runtime(context);
             geckoSession.open(currentRuntime);
             setSession(geckoSession);
             liveViews.add(this);
 
+            PlaybackDiagnostics.addListener(
+                    diagnosticsListener);
+
             bridgeResult.accept(
                     extension -> {
-                        if (destroyed) return;
+                        if (destroyed) {
+                            return;
+                        }
 
-                        geckoSession.getWebExtensionController().setMessageDelegate(
-                                extension,
-                                bridgeDelegate,
-                                "tvPageControls");
+                        geckoSession
+                                .getWebExtensionController()
+                                .setMessageDelegate(
+                                        extension,
+                                        bridgeDelegate,
+                                        "tvPageControls");
 
                         finishBridgeSetup();
                     },
                     error -> {
-                        if (destroyed) return;
+                        if (destroyed) {
+                            return;
+                        }
 
-                        Log.e(TAG, "TV page controls could not start", error);
+                        Log.e(
+                                TAG,
+                                "TV page controls could not start",
+                                error);
 
                         Toast.makeText(
                                 getContext(),
                                 "TV page controls unavailable",
                                 Toast.LENGTH_LONG).show();
 
-                        // Continue browsing even if the helper cannot start.
                         finishBridgeSetup();
                     });
         }
 
         private void finishBridgeSetup() {
             bridgeReady = true;
+
             Runnable navigation = pendingNavigation;
             pendingNavigation = null;
 
@@ -404,7 +552,10 @@ public final class WebViewProvider {
                 focusCache.cache();
             }
 
-            super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
+            super.onFocusChanged(
+                    gainFocus,
+                    direction,
+                    previouslyFocusedRect);
 
             if (geckoSession != null && gainFocus) {
                 post(focusCache::restore);
@@ -436,7 +587,9 @@ public final class WebViewProvider {
 
         @Override
         public void loadUrl(@NonNull String url) {
-            if (LocalizedContent.handleInternalContent(url, this)) return;
+            if (LocalizedContent.handleInternalContent(url, this)) {
+                return;
+            }
 
             currentUrl = url;
             navigate(() -> geckoSession.loadUri(url));
@@ -474,6 +627,9 @@ public final class WebViewProvider {
 
         @Override
         public void onPause() {
+            diagnosticsForeground = false;
+            updateDiagnosticsSampling();
+
             if (!destroyed) {
                 geckoSession.setFocused(false);
             }
@@ -481,6 +637,9 @@ public final class WebViewProvider {
 
         @Override
         public void onResume() {
+            diagnosticsForeground = true;
+            updateDiagnosticsSampling();
+
             if (!destroyed) {
                 geckoSession.setFocused(hasFocus());
             }
@@ -495,6 +654,9 @@ public final class WebViewProvider {
 
         @Override
         public void onStop() {
+            diagnosticsForeground = false;
+            updateDiagnosticsSampling();
+
             if (!destroyed) {
                 geckoSession.setActive(false);
             }
@@ -502,7 +664,6 @@ public final class WebViewProvider {
 
         @Override
         public void pauseTimers() {
-            // Gecko handles timer throttling for inactive sessions.
             sendCommand("pauseMedia", null);
         }
 
@@ -515,7 +676,6 @@ public final class WebViewProvider {
 
         @Override
         public void evalJS(@NonNull String js) {
-            // Executes DOM scripting in the extension's isolated context.
             sendCommand("eval", js);
         }
 
@@ -529,7 +689,8 @@ public final class WebViewProvider {
         @NonNull
         @Override
         public Bitmap takeScreenshot() {
-            if (lastScreenshot != null && !lastScreenshot.isRecycled()) {
+            if (lastScreenshot != null
+                    && !lastScreenshot.isRecycled()) {
                 return lastScreenshot;
             }
 
@@ -550,7 +711,8 @@ public final class WebViewProvider {
 
         @Override
         public void setBlockingEnabled(boolean enabled) {
-            geckoSession.getSettings().setUseTrackingProtection(enabled);
+            geckoSession.getSettings()
+                    .setUseTrackingProtection(enabled);
 
             if (callback != null) {
                 callback.onBlockingStateChanged(enabled);
@@ -564,7 +726,9 @@ public final class WebViewProvider {
 
         @Override
         public void saveWebViewState(@NonNull Session session) {
-            if (destroyed) return;
+            if (destroyed) {
+                return;
+            }
 
             boundSession = session;
             saveLatestState();
@@ -573,7 +737,9 @@ public final class WebViewProvider {
 
         @Override
         public void restoreWebViewState(@NonNull Session session) {
-            if (destroyed) return;
+            if (destroyed) {
+                return;
+            }
 
             boundSession = session;
             Bundle bundle = session.getWebViewState();
@@ -585,11 +751,14 @@ public final class WebViewProvider {
 
                 if (state != null) {
                     latestState = state;
+
                     currentUrl = bundle.getString(
                             URL_KEY,
                             session.getUrl().getValue());
 
-                    navigate(() -> geckoSession.restoreState(state));
+                    navigate(
+                            () -> geckoSession.restoreState(state));
+
                     return;
                 }
             }
@@ -599,10 +768,19 @@ public final class WebViewProvider {
 
         @Override
         public void destroy() {
-            if (destroyed) return;
+            if (destroyed) {
+                return;
+            }
 
             saveLatestState();
             destroyed = true;
+
+            diagnosticsHandler.removeCallbacks(
+                    diagnosticsTick);
+
+            PlaybackDiagnostics.removeListener(
+                    diagnosticsListener);
+
             callback = null;
             pendingNavigation = null;
             pendingCommands.clear();
