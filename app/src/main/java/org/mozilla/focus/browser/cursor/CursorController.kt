@@ -4,13 +4,13 @@
 
 package org.mozilla.focus.browser.cursor
 
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleObserver
-import androidx.lifecycle.OnLifecycleEvent
 import android.graphics.PointF
 import android.view.KeyEvent
 import android.view.View
 import android.view.accessibility.AccessibilityManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleObserver
+import androidx.lifecycle.OnLifecycleEvent
 import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.BrowserFragment
 import org.mozilla.focus.ext.getAccessibilityManager
@@ -20,73 +20,98 @@ import kotlin.properties.Delegates
 
 private const val MAX_SCROLL_VELOCITY = 13
 
-/**
- * Encapsulates interactions of the Cursors components. It has the following responsibilities:
- * - Data: references to each Cursor component
- * - Controller: manages interactions between the components and the parent fragment
- * - Lifecycle management: provides lifecycle callbacks; nulling a reference to this controller
- * will also prevent access to the components beyond the lifecycle.
- *
- * For simplicity, the lifecycle of the ViewModel and the KeyDispatcher are the same as the View.
- *
- * When using this class, don't forget to add it as a [LifecycleObserver].
- */
 class CursorController(
-        // Our lifecycle is shorter than BrowserFragment, so we can hold a reference.
-        private val browserFragment: BrowserFragment,
-        cursorParent: View,
-        private val view: CursorView
-) : AccessibilityManager.TouchExplorationStateChangeListener, LifecycleObserver {
+    private val browserFragment: BrowserFragment,
+    cursorParent: View,
+    private val view: CursorView
+) : AccessibilityManager.TouchExplorationStateChangeListener,
+    LifecycleObserver {
 
-    private var isEnabled: Boolean by Delegates.observable(true) { _, _, newValue ->
+    private var isEnabled: Boolean by Delegates.observable(true) {
+        _, _, newValue ->
+
         keyDispatcher.isEnabled = newValue
         view.visibility = if (newValue) View.VISIBLE else View.GONE
     }
 
-    private val viewModel = CursorViewModel(onUpdate = { x, y, percentMaxScrollVel, framesPassed ->
-        view.updatePosition(x, y)
-        scrollWebView(percentMaxScrollVel, framesPassed)
-    }, simulateTouchEvent = { browserFragment.requireActivity().dispatchTouchEvent(it) })
-
-    val keyDispatcher = CursorKeyDispatcher(isEnabled, onDirectionKey = { dir, action ->
-        when (action) {
-            KeyEvent.ACTION_DOWN -> viewModel.onDirectionKeyDown(dir)
-            KeyEvent.ACTION_UP -> viewModel.onDirectionKeyUp(dir)
-            else -> Unit
+    private val viewModel = CursorViewModel(
+        onUpdate = { x, y, percentMaxScrollVel, framesPassed ->
+            view.updatePosition(x, y)
+            scrollWebView(percentMaxScrollVel, framesPassed)
+        },
+        simulateTouchEvent = {
+            browserFragment.requireActivity().dispatchTouchEvent(it)
         }
-    }, onSelectKey = { event ->
-        viewModel.onSelectKeyEvent(event.action)
-        view.updateCursorPressedState(event)
-    })
+    )
+
+    val keyDispatcher = CursorKeyDispatcher(
+        isEnabled,
+        onDirectionKey = { direction, action ->
+            when (action) {
+                KeyEvent.ACTION_DOWN ->
+                    viewModel.onDirectionKeyDown(direction)
+
+                KeyEvent.ACTION_UP ->
+                    viewModel.onDirectionKeyUp(direction)
+
+                else -> Unit
+            }
+        },
+        onSelectKey = { event ->
+            viewModel.onSelectKeyEvent(event.action)
+            view.updateCursorPressedState(event)
+        }
+    )
 
     private val isLoadingObserver = CursorIsLoadingObserver()
 
     init {
-        cursorParent.addOnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-            viewModel.maxBounds = PointF(right.toFloat(), bottom.toFloat())
+        cursorParent.addOnLayoutChangeListener {
+            _, _, _, right, bottom, _, _, _, _ ->
+
+            viewModel.maxBounds = PointF(
+                right.toFloat(),
+                bottom.toFloat()
+            )
         }
     }
 
-    /** Gets the current state of the browser and updates the cursor enabled state accordingly. */
     fun setEnabledForCurrentState() {
-        // These sources have their own navigation controls.
-        isEnabled = !browserFragment.webView!!.isYoutubeTV && !browserFragment.requireContext().isVoiceViewEnabled()
-                && !browserFragment.browserOverlay.isVisible
+        isEnabled =
+            browserFragment.webView != null &&
+            !browserFragment.isInFullscreen &&
+            browserFragment.webView?.isYoutubeTV != true &&
+            !browserFragment.requireContext().isVoiceViewEnabled() &&
+            !browserFragment.browserOverlay.isVisible
+
+        if (!isEnabled) {
+            onPause()
+        }
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_START)
     fun onStart() {
-        browserFragment.requireContext().getAccessibilityManager().addTouchExplorationStateChangeListener(this)
-        setEnabledForCurrentState() // VoiceView state may change.
+        browserFragment.requireContext()
+            .getAccessibilityManager()
+            .addTouchExplorationStateChangeListener(this)
 
-        browserFragment.session.loading.observe(browserFragment, isLoadingObserver)
+        setEnabledForCurrentState()
+
+        browserFragment.session.loading.observe(
+            browserFragment,
+            isLoadingObserver
+        )
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
     fun onStop() {
-        browserFragment.requireContext().getAccessibilityManager().removeTouchExplorationStateChangeListener(this)
+        browserFragment.requireContext()
+            .getAccessibilityManager()
+            .removeTouchExplorationStateChangeListener(this)
 
-        browserFragment.session.loading.removeObserver(isLoadingObserver)
+        browserFragment.session.loading.removeObserver(
+            isLoadingObserver
+        )
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
@@ -97,26 +122,37 @@ class CursorController(
 
     @OnLifecycleEvent(Lifecycle.Event.ON_RESUME)
     fun onResume() {
-        view.startUpdates()
+        setEnabledForCurrentState()
+
+        if (isEnabled) {
+            view.startUpdates()
+        }
     }
 
     override fun onTouchExplorationStateChanged(isEnabled: Boolean) {
         setEnabledForCurrentState()
     }
 
-    private fun scrollWebView(percentMaxScrollVel: PointF, framesPassed: Float) {
-        fun getDeltaScrollAdjustedForTime(percentScrollVel: Float) =
-                Math.round(percentScrollVel * MAX_SCROLL_VELOCITY * framesPassed)
+    private fun scrollWebView(
+        percentScrollVel: PointF,
+        framesPassed: Float
+    ) {
+        fun deltaScroll(percentVelocity: Float) =
+            Math.round(
+                percentVelocity *
+                    MAX_SCROLL_VELOCITY *
+                    framesPassed
+            )
 
-        // Adjusting for time guarantees the distance scrolled
-        // is the same, even if the framerate drops.
-        val scrollX = getDeltaScrollAdjustedForTime(percentMaxScrollVel.x)
-        val scrollY = getDeltaScrollAdjustedForTime(percentMaxScrollVel.y)
-
-        browserFragment.webView?.scrollByClamped(scrollX, scrollY)
+        browserFragment.webView?.scrollByClamped(
+            deltaScroll(percentScrollVel.x),
+            deltaScroll(percentScrollVel.y)
+        )
     }
 
-    private inner class CursorIsLoadingObserver : NonNullObserver<Boolean>() {
+    private inner class CursorIsLoadingObserver :
+        NonNullObserver<Boolean>() {
+
         override fun onValueChanged(isLoading: Boolean) {
             setEnabledForCurrentState()
         }
