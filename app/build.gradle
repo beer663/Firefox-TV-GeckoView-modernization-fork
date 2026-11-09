@@ -25,7 +25,7 @@ android {
         ndk {
             // One universal Android TV APK. Devices choose their ABI at install time.
             // Includes ARMv7, ARM64, and emulator/other x86 ABIs.
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            abiFilters 'armeabi-v7a'
         }
 
         // The old build read this from a secret file; there is no crash-report server any more.
