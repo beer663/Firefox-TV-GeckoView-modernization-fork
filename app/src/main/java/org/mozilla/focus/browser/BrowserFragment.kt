@@ -5,13 +5,16 @@
 package org.mozilla.focus.browser
 
 import android.os.Bundle
+import android.preference.PreferenceManager
 import android.text.TextUtils
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.annotation.UiThread
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.Observer
@@ -21,6 +24,7 @@ import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.cursor.CursorController
 import org.mozilla.focus.browser.cursor.CursorView
 import org.mozilla.focus.ext.isVisible
+import org.mozilla.focus.ext.isVoiceViewEnabled
 import org.mozilla.focus.ext.toUri
 import org.mozilla.focus.home.BundledTilesManager
 import org.mozilla.focus.home.CustomTilesManager
@@ -33,6 +37,7 @@ import org.mozilla.focus.session.SessionManager
 import org.mozilla.focus.telemetry.TelemetryWrapper
 import org.mozilla.focus.telemetry.UrlTextInputLocation
 import org.mozilla.focus.utils.OnUrlEnteredListener
+import org.mozilla.focus.utils.Settings
 import org.mozilla.focus.utils.ViewUtils.showCenteredTopToast
 import org.mozilla.focus.widget.InlineAutocompleteEditText
 import org.mozilla.tv.firefox.R
@@ -87,13 +92,26 @@ class BrowserFragment : IWebViewLifecycleFragment() {
     private var keepScreenOnBeforeFullscreen = false
     private var showMenuAfterFullscreen = false
 
+    private val pointerGesture = FullscreenPointerGesture()
+    private var pendingSelectDown: KeyEvent? = null
+    private var suppressSelectRelease = false
+
+    internal val isFullscreenPointerEnabled: Boolean
+        get() = PreferenceManager.getDefaultSharedPreferences(
+            requireContext()
+        ).getBoolean(
+            "fullscreen_pointer_enabled",
+            webView?.isYoutubeTV != true
+        )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initSession()
     }
 
     private fun initSession() {
-        val sessionUUID = requireArguments().getString(ARGUMENT_SESSION_UUID)
+        val sessionUUID = requireArguments()
+            .getString(ARGUMENT_SESSION_UUID)
             ?: throw IllegalAccessError("No session exists")
 
         session = if (sessionManager.hasSessionWithUUID(sessionUUID)) {
@@ -104,8 +122,8 @@ class BrowserFragment : IWebViewLifecycleFragment() {
 
         webView?.setBlockingEnabled(session.isBlockingEnabled)
 
-        session.url.observe(this, Observer { url ->
-            this@BrowserFragment.url = url
+        session.url.observe(this, Observer { currentUrl ->
+            this@BrowserFragment.url = currentUrl
         })
 
         session.loading.observe(this, object : NonNullObserver<Boolean>() {
@@ -139,7 +157,15 @@ class BrowserFragment : IWebViewLifecycleFragment() {
                 }
             }
 
-            NavigationEvent.TURBO,
+            NavigationEvent.TURBO -> {
+                val enabled =
+                    Settings.getInstance(requireContext()).isBlockingEnabled
+
+                session.isBlockingEnabled = enabled
+                webView?.setBlockingEnabled(enabled)
+                webView?.reload()
+            }
+
             NavigationEvent.RELOAD -> webView?.reload()
 
             NavigationEvent.HOME -> {
@@ -253,7 +279,27 @@ class BrowserFragment : IWebViewLifecycleFragment() {
         return layout
     }
 
+    override fun onPause() {
+        if (pointerGesture.isPressed) {
+            suppressSelectRelease = true
+        }
+
+        pendingSelectDown = null
+        pointerGesture.reset()
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        if (view != null && !browserOverlay.isVisible) {
+            restorePageFocus()
+        }
+    }
+
     override fun onDestroyView() {
+        pendingSelectDown = null
+        pointerGesture.reset()
         navigationState.requestFullscreenExit()
         finishFullscreen(restoreFocus = false)
         navigationState.reset()
@@ -307,6 +353,8 @@ class BrowserFragment : IWebViewLifecycleFragment() {
     }
 
     private fun handleSpecialKeyEvent(event: KeyEvent): Boolean {
+        if (handleFullscreenSelect(event)) return true
+
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             val consumed = when (event.action) {
                 KeyEvent.ACTION_DOWN -> {
@@ -330,7 +378,9 @@ class BrowserFragment : IWebViewLifecycleFragment() {
                             showMenuAfterFullscreen = true
                             navigationState.requestFullscreenExit()
                         } else {
-                            setOverlayVisibileByUser(!browserOverlay.isVisible)
+                            setOverlayVisibileByUser(
+                                !browserOverlay.isVisible
+                            )
                         }
                     }
                 }
@@ -366,11 +416,132 @@ class BrowserFragment : IWebViewLifecycleFragment() {
         return false
     }
 
+    private fun handleFullscreenSelect(event: KeyEvent): Boolean {
+        val selectKey =
+            event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+            event.keyCode == KeyEvent.KEYCODE_ENTER ||
+            event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+        if (!selectKey) return false
+
+        if (suppressSelectRelease) {
+            if (event.action == KeyEvent.ACTION_UP) {
+                suppressSelectRelease = false
+                return true
+            }
+
+            if (
+                event.action == KeyEvent.ACTION_DOWN &&
+                event.repeatCount == 0
+            ) {
+                suppressSelectRelease = false
+            } else {
+                return true
+            }
+        }
+
+        if (!isInFullscreen && !pointerGesture.isPressed) {
+            return false
+        }
+
+        if (
+            pointerGesture.isPressed &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            event.repeatCount == 0
+        ) {
+            pointerGesture.reset()
+            pendingSelectDown = null
+        }
+
+        if (
+            pointerGesture.isPressed &&
+            pendingSelectDown?.keyCode != event.keyCode
+        ) {
+            return true
+        }
+
+        if (
+            !pointerGesture.isPressed &&
+            (
+                event.action != KeyEvent.ACTION_DOWN ||
+                browserOverlay.isVisible ||
+                requireContext().isVoiceViewEnabled()
+            )
+        ) {
+            return false
+        }
+
+        val timeout = ViewConfiguration.getLongPressTimeout().toLong()
+
+        val action = when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (!pointerGesture.isPressed) {
+                    pendingSelectDown = KeyEvent(event)
+                }
+                pointerGesture.down(event.eventTime, timeout)
+            }
+
+            KeyEvent.ACTION_UP -> {
+                pointerGesture.up(
+                    event.eventTime,
+                    timeout,
+                    event.isCanceled ||
+                        !isInFullscreen ||
+                        browserOverlay.isVisible ||
+                        requireContext().isVoiceViewEnabled()
+                )
+            }
+
+            else -> FullscreenPointerGesture.Action.WAIT
+        }
+
+        if (
+            action == FullscreenPointerGesture.Action.TOGGLE &&
+            isInFullscreen
+        ) {
+            val enabled = !isFullscreenPointerEnabled
+
+            PreferenceManager.getDefaultSharedPreferences(
+                requireContext()
+            ).edit()
+                .putBoolean("fullscreen_pointer_enabled", enabled)
+                .apply()
+
+            cursor?.onPause()
+            updateCursorState()
+            restorePageFocus()
+
+            Toast.makeText(
+                requireContext(),
+                if (enabled) {
+                    "Fullscreen pointer: On"
+                } else {
+                    "Fullscreen pointer: Off"
+                },
+                Toast.LENGTH_SHORT
+            ).show()
+        } else if (action == FullscreenPointerGesture.Action.CLICK) {
+            pendingSelectDown?.let { down ->
+                if (cursor?.dispatchSelectClick(down, event) != true) {
+                    val page = webView as? View
+                    page?.dispatchKeyEvent(down)
+                    page?.dispatchKeyEvent(event)
+                }
+            }
+        }
+
+        if (event.action == KeyEvent.ACTION_UP) {
+            pendingSelectDown = null
+        }
+
+        return true
+    }
+
     private fun updateCursorState() {
         cursor?.setEnabledForCurrentState()
 
         if (
-            !isInFullscreen &&
+            (!isInFullscreen || isFullscreenPointerEnabled) &&
             !browserOverlay.isVisible &&
             lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
         ) {
@@ -474,7 +645,6 @@ class BrowserFragment : IWebViewLifecycleFragment() {
         videoContainer.removeAllViews()
 
         if (videoView == null) {
-            // Gecko renders fullscreen video in the existing GeckoView.
             browserContainer.visibility = View.VISIBLE
             videoContainer.visibility = View.GONE
             webView?.requestFocus()
@@ -544,8 +714,6 @@ class BrowserFragment : IWebViewLifecycleFragment() {
                 restorePageFocus()
             }
         }
-
-        // Gecko already exited; do not call the exit callback again.
     }
 
     private inner class NavigationStateProvider :
