@@ -5,7 +5,6 @@ package org.mozilla.focus.diagnostics;
 
 import java.util.ArrayDeque;
 
-/** Bounded, process-only recording. Epochs reject old responses. */
 public final class PlaybackSampleStore {
     private final int capacity;
     private final ArrayDeque<String> samples = new ArrayDeque<>();
@@ -16,6 +15,7 @@ public final class PlaybackSampleStore {
         if (capacity < 1) {
             throw new IllegalArgumentException("Capacity must be positive");
         }
+
         this.capacity = capacity;
     }
 
