@@ -1,7 +1,10 @@
-name: Build Firefox TV (Gecko only)
+name: Build Firefox TV (ARMv7 release download)
 
 on:
-  workflow_dispatch: # Only runs when manually triggered from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-gecko:
@@ -22,8 +25,6 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
 
-      # SDK Manager publishes API 37 as android-37.0, but some tooling still
-      # looks for the legacy android-37 directory when compileSdk is 37.
       - name: Verify Android 37 SDK for Gradle
         shell: bash
         run: |
@@ -33,13 +34,9 @@ jobs:
           if [ ! -e "$SDK_ROOT/platforms/android-37" ]; then
             ln -s android-37.0 "$SDK_ROOT/platforms/android-37"
           fi
-          echo "Android API 37.0 SDK is installed."
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
 
       - name: Print resolved GeckoView runtime dependency
         run: bash ./gradlew :app:dependencyInsight --configuration geckoDebugRuntimeClasspath --dependency org.mozilla.geckoview
@@ -47,11 +44,49 @@ jobs:
       - name: Build Gecko debug APK
         run: bash ./gradlew :app:assembleGeckoDebug --stacktrace
 
-      - name: Save Gecko APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Firefox-TV-Gecko-debug-APK
-          path: app/build/outputs/apk/gecko/debug/*.apk
-          if-no-files-found: error
-          retention-days: 1
+      - name: Prepare and verify ARMv7 APK
+        shell: bash
+        run: |
+          mkdir -p release-files
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          import zipfile
+
+          apks = list(Path('app/build/outputs/apk/gecko/debug').glob('*.apk'))
+          if len(apks) != 1:
+              raise SystemExit(f'Expected exactly one APK, found {len(apks)}')
+
+          with zipfile.ZipFile(apks[0]) as archive:
+              abis = {
+                  name.split('/')[1]
+                  for name in archive.namelist()
+                  if name.startswith('lib/') and name.endswith('.so')
+              }
+
+          if abis != {'armeabi-v7a'}:
+              raise SystemExit(
+                  f'Expected ARMv7 only, found: {sorted(abis)}. '
+                  'Set abiFilters to armeabi-v7a in app/build.gradle.'
+              )
+
+          shutil.copyfile(
+              apks[0],
+              'release-files/Moms-Firefox-TV-ARMv7-debug.apk'
+          )
+          print('Verified ARMv7-only APK.')
+          PY
+
+      - name: Publish APK to GitHub Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: tv-armv7-${{ github.run_number }}-${{ github.run_attempt }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            release-files/Moms-Firefox-TV-ARMv7-debug.apk \
+            --target "$GITHUB_SHA" \
+            --title "Mom's Firefox TV ARMv7 - Build $GITHUB_RUN_NUMBER" \
+            --notes "ARMv7-only development APK. Download the APK below and install it on your TV. This is a debug build for testing." \
+            --prerelease
