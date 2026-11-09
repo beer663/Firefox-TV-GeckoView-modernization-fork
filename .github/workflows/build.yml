@@ -1,4 +1,4 @@
-name: Build Firefox TV (ARMv7 release download)
+name: Build Firefox TV (Gecko debug APK)
 
 on:
   workflow_dispatch:
@@ -38,65 +38,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Restore persistent TV signing key
-        shell: bash
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          set -euo pipefail
-          umask 077
-
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ]; then
-            echo "::error::Add ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS in repository Actions secrets. Keep the same key for every build."
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          import base64
-          import binascii
-          import os
-          from pathlib import Path
-
-          encoded = ''.join(os.environ['ANDROID_KEYSTORE_BASE64'].split())
-
-          try:
-              data = base64.b64decode(encoded, validate=True)
-          except (binascii.Error, ValueError):
-              raise SystemExit('ANDROID_KEYSTORE_BASE64 is not valid base64.')
-
-          if not data:
-              raise SystemExit('The signing keystore is empty.')
-
-          keystore = Path(os.environ['RUNNER_TEMP']) / 'moms-firefox-tv-signing.jks'
-          keystore.write_bytes(data)
-
-          version_code = 1000 + int(os.environ['GITHUB_RUN_NUMBER'])
-          if version_code > 2100000000:
-              raise SystemExit('Version code exceeds the Android limit.')
-
-          with open(os.environ['GITHUB_ENV'], 'a') as environment:
-              environment.write(f'TV_SIGNING_STORE_FILE={keystore}\n')
-              environment.write(f'TV_VERSION_CODE={version_code}\n')
-          PY
-
-          keytool -list \
-            -keystore "$RUNNER_TEMP/moms-firefox-tv-signing.jks" \
-            -storepass:env ANDROID_KEYSTORE_PASSWORD \
-            -alias "$ANDROID_KEY_ALIAS" > /dev/null
-
       - name: Print resolved GeckoView runtime dependency
-        env:
-          TV_SIGNING_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          TV_SIGNING_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: bash ./gradlew :app:dependencyInsight --configuration geckoDebugRuntimeClasspath --dependency org.mozilla.geckoview
 
-      - name: Build signed Gecko debug APK
-        env:
-          TV_SIGNING_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          TV_SIGNING_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: bash ./gradlew :app:assembleGeckoDebug -PtvVersionCode="$TV_VERSION_CODE" -PtvVersionName="4.8.$GITHUB_RUN_NUMBER" --stacktrace
+      - name: Build Gecko debug APK (automatic debug signing)
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$((1000 + GITHUB_RUN_NUMBER))
+          bash ./gradlew :app:assembleGeckoDebug \
+            -PtvVersionCode="$version_code" \
+            -PtvVersionName="4.8.$GITHUB_RUN_NUMBER" \
+            --stacktrace
 
       - name: Prepare and verify ARMv7 APK
         shell: bash
@@ -147,10 +100,6 @@ jobs:
             release-files/Moms-Firefox-TV-ARMv7-debug.apk \
             --target "$GITHUB_SHA" \
             --title "Mom's Firefox TV ARMv7 - Build $GITHUB_RUN_NUMBER" \
-            --notes "ARMv7 development APK signed with the persistent TV key. Package: org.mozilla.tv.firefox.debug. Android version code: $TV_VERSION_CODE." \
+            --notes "ARMv7 debug APK using Android automatic debug signing. Package: org.mozilla.tv.firefox.debug. A new GitHub runner may use a different debug certificate: uninstall the previous test build if Android reports an update/signature conflict." \
             --prerelease
 
-      - name: Remove temporary signing file
-        if: always()
-        shell: bash
-        run: rm -f "$RUNNER_TEMP/moms-firefox-tv-signing.jks"
