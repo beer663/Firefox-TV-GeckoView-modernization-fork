@@ -5,33 +5,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
-def tvSigningStoreFile = System.getenv('TV_SIGNING_STORE_FILE')
-def tvSigningPassword = System.getenv('TV_SIGNING_PASSWORD')
-def tvSigningAlias = System.getenv('TV_SIGNING_ALIAS')
-def tvSigningValues = [
-    tvSigningStoreFile,
-    tvSigningPassword,
-    tvSigningAlias
-]
-
-def hasTvSigning = tvSigningValues.any {
-    it != null && !it.isEmpty()
-}
-
-if (hasTvSigning && tvSigningValues.any {
-    it == null || it.isEmpty()
-}) {
-    throw new GradleException(
-        'Provide all three TV_SIGNING_STORE_FILE, TV_SIGNING_PASSWORD and TV_SIGNING_ALIAS variables, or none for a local debug build.'
-    )
-}
-
-if (hasTvSigning && !file(tvSigningStoreFile).isFile()) {
-    throw new GradleException(
-        'The configured TV signing keystore file does not exist.'
-    )
-}
-
 def tvVersionCodeText =
     (findProperty('tvVersionCode') ?: '11').toString()
 
@@ -82,17 +55,6 @@ android {
         abortOnError false
     }
 
-    signingConfigs {
-        if (hasTvSigning) {
-            tvPersistent {
-                storeFile file(tvSigningStoreFile)
-                storePassword tvSigningPassword
-                keyAlias tvSigningAlias
-                keyPassword tvSigningPassword
-            }
-        }
-    }
-
     buildTypes {
         release {
             minifyEnabled true
@@ -104,10 +66,7 @@ android {
 
         debug {
             applicationIdSuffix ".debug"
-
-            if (hasTvSigning) {
-                signingConfig signingConfigs.tvPersistent
-            }
+            // Android Gradle Plugin signs debug APKs automatically.
         }
     }
 
