@@ -5,30 +5,70 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+def tvSigningStoreFile = System.getenv('TV_SIGNING_STORE_FILE')
+def tvSigningPassword = System.getenv('TV_SIGNING_PASSWORD')
+def tvSigningAlias = System.getenv('TV_SIGNING_ALIAS')
+def tvSigningValues = [
+    tvSigningStoreFile,
+    tvSigningPassword,
+    tvSigningAlias
+]
+
+def hasTvSigning = tvSigningValues.any {
+    it != null && !it.isEmpty()
+}
+
+if (hasTvSigning && tvSigningValues.any {
+    it == null || it.isEmpty()
+}) {
+    throw new GradleException(
+        'Provide all three TV_SIGNING_STORE_FILE, TV_SIGNING_PASSWORD and TV_SIGNING_ALIAS variables, or none for a local debug build.'
+    )
+}
+
+if (hasTvSigning && !file(tvSigningStoreFile).isFile()) {
+    throw new GradleException(
+        'The configured TV signing keystore file does not exist.'
+    )
+}
+
+def tvVersionCodeText =
+    (findProperty('tvVersionCode') ?: '11').toString()
+
+if (
+    !(tvVersionCodeText ==~ /[0-9]+/) ||
+    tvVersionCodeText.toBigInteger() < 1 ||
+    tvVersionCodeText.toBigInteger() > 2100000000
+) {
+    throw new GradleException(
+        'tvVersionCode must be an integer between 1 and 2100000000.'
+    )
+}
+
+def tvVersionCode = tvVersionCodeText.toInteger()
+def tvVersionName =
+    (findProperty('tvVersionName') ?: '4.8').toString()
+
 android {
     namespace 'org.mozilla.tv.firefox'
-    // GeckoView 159 and AndroidX Core 1.19 require API 37 for compilation.
-    // minSdk 26 and targetSdk 28 are intentionally unchanged: one APK for Android 8–14.
     compileSdk 37
 
     defaultConfig {
         applicationId "org.mozilla.tv.firefox"
         minSdk 26
         targetSdk 28
-        versionCode 11
-        versionName "4.8"
+        versionCode tvVersionCode
+        versionName tvVersionName
+
         testInstrumentationRunner "org.mozilla.tv.firefox.FirefoxOnDeviceTestRunner"
         testInstrumentationRunnerArguments clearPackageData: 'true'
 
         multiDexEnabled true
 
         ndk {
-            // One universal Android TV APK. Devices choose their ABI at install time.
-            // Includes ARMv7, ARM64, and emulator/other x86 ABIs.
             abiFilters 'armeabi-v7a'
         }
 
-        // The old build read this from a secret file; there is no crash-report server any more.
         buildConfigField 'String', 'SENTRY_DSN', 'null'
     }
 
@@ -42,24 +82,42 @@ android {
         abortOnError false
     }
 
+    signingConfigs {
+        if (hasTvSigning) {
+            tvPersistent {
+                storeFile file(tvSigningStoreFile)
+                storePassword tvSigningPassword
+                keyAlias tvSigningAlias
+                keyPassword tvSigningPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile(
+                'proguard-android-optimize.txt'
+            ), 'proguard-rules.pro'
         }
+
         debug {
             applicationIdSuffix ".debug"
+
+            if (hasTvSigning) {
+                signingConfig signingConfigs.tvPersistent
+            }
         }
     }
 
     flavorDimensions "engine"
 
     productFlavors {
-        // Gecko-only CI: the legacy System flavor is kept only for repository history.
         system {
             dimension "engine"
         }
+
         gecko {
             dimension "engine"
         }
@@ -70,12 +128,12 @@ android {
         execution 'ANDROIDX_TEST_ORCHESTRATOR'
     }
 
-    // Standard Android source layout: app/src/main/{java,res,assets}.
-    // Engine-specific sources remain in app/src/gecko and app/src/system.
-
     packaging {
         resources {
-            excludes += ['META-INF/proguard/androidx-annotations.pro', 'META-INF/atomicfu.kotlin_module']
+            excludes += [
+                'META-INF/proguard/androidx-annotations.pro',
+                'META-INF/atomicfu.kotlin_module'
+            ]
         }
     }
 
@@ -85,8 +143,6 @@ android {
     }
 }
 
-// The extension manager depends on GeckoView. Keep the legacy System sources
-// in the repository, but do not offer an APK variant that cannot compile or run it.
 androidComponents {
     beforeVariants(selector().all()) { variantBuilder ->
         if (variantBuilder.name.startsWith('system')) {
@@ -95,7 +151,9 @@ androidComponents {
     }
 }
 
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+tasks.withType(
+    org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+).configureEach {
     kotlinOptions {
         allWarningsAsErrors = false
         jvmTarget = '17'
@@ -105,7 +163,6 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 dependencies {
     implementation 'io.sentry:sentry-android:1.7.21'
 
-    // Pin the AndroidX UI base explicitly for app source superclasses.
     implementation "androidx.appcompat:appcompat:1.6.1"
     implementation "androidx.fragment:fragment-ktx:1.6.2"
     implementation "androidx.legacy:legacy-support-v4:$androidx_version"
@@ -120,8 +177,7 @@ dependencies {
     implementation 'com.squareup.picasso:picasso:2.71828'
     implementation 'com.google.android.gms:play-services-oss-licenses:17.1.0'
 
-    implementation ("com.google.code.findbugs:annotations:3.0.1") {
-        // We really only need the SuppressFBWarnings annotation.
+    implementation("com.google.code.findbugs:annotations:3.0.1") {
         transitive = false
     }
 
@@ -147,16 +203,14 @@ dependencies {
     implementation "org.mozilla.components:support-utils:$moz_components_version"
     implementation "org.mozilla.components:support-rusthttp:$moz_components_version"
 
-    // Keep engine implementations flavor-scoped.
     systemImplementation "org.mozilla.components:browser-engine-system:$moz_components_version"
 
-    // Do not bring in the legacy component's transitive GeckoView AAR.
-    // The browsing frontend uses the modern raw GeckoSession adapter.
-    geckoImplementation("org.mozilla.components:browser-engine-gecko:$moz_components_version") {
+    geckoImplementation(
+        "org.mozilla.components:browser-engine-gecko:$moz_components_version"
+    ) {
         exclude group: 'org.mozilla.geckoview'
     }
 
-    // Published stable GeckoView build. Android 8 (API 26) minimum.
     geckoImplementation 'org.mozilla.geckoview:geckoview:159.0.20261022150525'
 
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
@@ -166,12 +220,11 @@ dependencies {
     implementation 'io.reactivex.rxjava2:rxkotlin:2.3.0'
     implementation 'io.reactivex.rxjava2:rxandroid:2.1.1'
 
-    // lifecycle-extensions was discontinued at 2.2.0.
     implementation "androidx.lifecycle:lifecycle-extensions:2.2.0"
     implementation "androidx.lifecycle:lifecycle-viewmodel:$architecture_components_version"
     implementation "androidx.lifecycle:lifecycle-reactivestreams:$architecture_components_version"
-    testImplementation "androidx.arch.core:core-testing:$architecture_components_version"
 
+    testImplementation "androidx.arch.core:core-testing:2.2.0"
     testImplementation "androidx.test.ext:junit:$junit"
     testImplementation "org.robolectric:robolectric:$robolectric_version"
     testImplementation 'org.mockito:mockito-core:2.24.5'
@@ -179,7 +232,6 @@ dependencies {
 
     testImplementation "androidx.test:core:$test_core"
     androidTestImplementation "androidx.test:core:$test_core"
-
     androidTestImplementation "androidx.test.uiautomator:uiautomator:$uiautomator_version"
 
     androidTestImplementation "androidx.test.espresso:espresso-core:$espresso_version"
@@ -199,21 +251,20 @@ dependencies {
     testImplementation 'com.squareup.okhttp3:mockwebserver:3.10.0'
 
     androidTestImplementation "tools.fastlane:screengrab:1.2.0", {
-        exclude group: 'com.android.support.test.uiautomator', module: 'uiautomator-v18'
+        exclude group: 'com.android.support.test.uiautomator',
+                module: 'uiautomator-v18'
     }
 
     androidTestImplementation "org.jetbrains.kotlin:kotlin-reflect:${kotlin_version}"
 
-    // Download from https://developer.amazon.com/sdk-download
-    compileOnly files("libs/amazon-device-messaging-${adm_version}.jar")
-    testImplementation files("libs/amazon-device-messaging-${adm_version}.jar")
-}
+    compileOnly files(
+        "libs/amazon-device-messaging-${adm_version}.jar"
+    )
 
-// -------------------------------------------------------------------------------------------------
-// L10N: Generate list of locales
-// Firefox TV provides its own locale switcher, which requires a list of locale codes.
-// The generated LocaleList.java is checked in.
-// -------------------------------------------------------------------------------------------------
+    testImplementation files(
+        "libs/amazon-device-messaging-${adm_version}.jar"
+    )
+}
 
 def getEnabledLocales() {
     def resDir = file('src/main/res')
@@ -233,9 +284,9 @@ def getEnabledLocales() {
         return it.substring("values-".length())
     }.collect {
         if (it.length() > 3 && it.contains("-r")) {
-            // Strip Android's "r" prefix from the region.
             def regionPrefixPosition = it.indexOf("-r") + 1
-            return it.substring(0, regionPrefixPosition) + it.substring(regionPrefixPosition + 1)
+            return it.substring(0, regionPrefixPosition) +
+                it.substring(regionPrefixPosition + 1)
         } else {
             return it
         }
@@ -243,22 +294,27 @@ def getEnabledLocales() {
         return '"' + it + '"'
     }
 
-    // en-US is the default language in "values".
     langs << '"en-US"'
     return langs.sort { it }
 }
 
-def generatedLocaleListDir = 'src/main/java/org/mozilla/tv/firefox/generated'
+def generatedLocaleListDir =
+    'src/main/java/org/mozilla/tv/firefox/generated'
+
 def generatedLocaleListFilename = 'LocaleList.java'
 
 task generateLocaleList {
     doLast {
         def dir = file(generatedLocaleListDir)
         dir.mkdir()
-        def localeList = file(new File(dir, generatedLocaleListFilename))
+
+        def localeList = file(
+            new File(dir, generatedLocaleListFilename)
+        )
 
         localeList.delete()
         localeList.createNewFile()
+
         localeList << "package org.mozilla.tv.firefox.generated;" << "\n" << "\n"
         localeList << "import java.util.Arrays;" << "\n"
         localeList << "import java.util.Collections;" << "\n"
