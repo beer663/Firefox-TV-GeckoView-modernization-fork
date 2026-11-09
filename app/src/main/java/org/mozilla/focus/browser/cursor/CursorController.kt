@@ -63,6 +63,18 @@ class CursorController(
         }
     )
 
+    fun dispatchSelectClick(down: KeyEvent, up: KeyEvent): Boolean {
+        if (!isEnabled) return false
+
+        viewModel.onSelectKeyEvent(KeyEvent.ACTION_DOWN)
+        view.updateCursorPressedState(down)
+
+        viewModel.onSelectKeyEvent(KeyEvent.ACTION_UP)
+        view.updateCursorPressedState(up)
+
+        return true
+    }
+
     private val isLoadingObserver = CursorIsLoadingObserver()
 
     init {
@@ -79,8 +91,13 @@ class CursorController(
     fun setEnabledForCurrentState() {
         isEnabled =
             browserFragment.webView != null &&
-            !browserFragment.isInFullscreen &&
-            browserFragment.webView?.isYoutubeTV != true &&
+            (
+                if (browserFragment.isInFullscreen) {
+                    browserFragment.isFullscreenPointerEnabled
+                } else {
+                    browserFragment.webView?.isYoutubeTV != true
+                }
+            ) &&
             !browserFragment.requireContext().isVoiceViewEnabled() &&
             !browserFragment.browserOverlay.isVisible
 
