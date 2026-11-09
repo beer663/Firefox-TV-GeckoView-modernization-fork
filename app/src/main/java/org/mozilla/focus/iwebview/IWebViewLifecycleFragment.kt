@@ -7,10 +7,11 @@ package org.mozilla.focus.iwebview
 import android.os.Bundle
 import android.view.View
 import androidx.annotation.UiThread
-import org.mozilla.tv.firefox.R
 import org.mozilla.focus.locale.LocaleAwareFragment
 import org.mozilla.focus.locale.LocaleManager
 import org.mozilla.focus.session.Session
+import org.mozilla.focus.utils.Settings
+import org.mozilla.tv.firefox.R
 import java.util.Locale
 
 abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
@@ -27,6 +28,8 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
 
         webView = (view.findViewById<View>(R.id.webview) as IWebView).apply {
             callback = iWebViewCallback
+            session.isBlockingEnabled =
+                Settings.getInstance(requireContext()).isBlockingEnabled
             setBlockingEnabled(session.isBlockingEnabled)
             restoreWebViewOrLoadInitialUrl(this)
         }
@@ -46,7 +49,6 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
             it.onPause()
             it.pauseTimers()
         }
-
         super.onPause()
     }
 
@@ -67,7 +69,6 @@ abstract class IWebViewLifecycleFragment : LocaleAwareFragment() {
     }
 
     override fun onDestroyView() {
-        // Fragments can outlive their views while Home or Settings is shown.
         webView?.let {
             it.saveWebViewState(session)
             it.callback = null
