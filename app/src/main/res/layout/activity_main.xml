@@ -1,13 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Original Firefox TV activity host. ScreenController switches the home,
-     browser, and settings fragments in this container. -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<org.mozilla.focus.browser.cursor.TvCursorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/rootView"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <FrameLayout
-        android:id="@+id/container"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-</FrameLayout>
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/tvToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#252830"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+
+            <Button
+                android:id="@+id/tvHomeButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_home"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/tvBookmarkButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_bookmark"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/tvMenuButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_menu"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/tvSettingsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/menu_settings"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+</org.mozilla.focus.browser.cursor.TvCursorLayout>
