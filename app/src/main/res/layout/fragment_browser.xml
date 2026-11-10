@@ -1,63 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- This Source Code Form is subject to the terms of the Mozilla Public
-   - License, v. 2.0. If a copy of the MPL was not distributed with this
-   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/browserFragmentRoot"
+<org.mozilla.focus.browser.cursor.TvCursorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootView"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
     <LinearLayout
-        android:id="@+id/browserContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <org.mozilla.focus.widget.ResizableKeyboardCoordinatorLayout
-            app:viewToHideWhenActivated="@+id/erase"
-            android:layout_marginTop="0dp"
-            android:id="@+id/main_content"
+        <LinearLayout
+            android:id="@+id/tvToolbar"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:clipChildren="false">
+            android:layout_height="wrap_content"
+            android:background="#252830"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
 
-            <view class="org.mozilla.focus.iwebview.WebViewProvider$GeckoWebView"
-                android:id="@+id/webview"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scrollbarThumbVertical="@drawable/scrollbar_thumb" />
+            <Button
+                android:id="@+id/tvHomeButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_home"
+                android:textAllCaps="false" />
 
-            <include layout="@layout/hint_bar" />
+            <Button
+                android:id="@+id/tvBookmarkButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_bookmark"
+                android:textAllCaps="false" />
 
-        </org.mozilla.focus.widget.ResizableKeyboardCoordinatorLayout>
+            <Button
+                android:id="@+id/tvDownloadsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_downloads"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/tvHistoryButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_history"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/tvSettingsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/menu_settings"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
     </LinearLayout>
-
-    <FrameLayout
-        android:id="@+id/videoContainer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@android:color/black"
-        android:visibility="gone" />
-
-    <org.mozilla.focus.browser.cursor.CursorView
-        android:id="@+id/cursorView"
-        android:layout_width="@dimen/remote_cursor_size"
-        android:layout_height="@dimen/remote_cursor_size"
-        android:scaleType="centerInside" />
-
-    <org.mozilla.focus.browser.BrowserNavigationOverlay
-        android:id="@+id/browserOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
-
-    <org.mozilla.focus.browser.FirefoxProgressBar
-        android:id="@+id/progressBar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:descendantFocusability="blocksDescendants"
-        android:focusable="false" />
-</FrameLayout>
+</org.mozilla.focus.browser.cursor.TvCursorLayout>
