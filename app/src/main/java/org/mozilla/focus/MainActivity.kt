@@ -1,16 +1,20 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
+ * License, v. 2.0. https://mozilla.org/MPL/2.0/ */
 package org.mozilla.focus
 
 import android.content.Intent
+import android.graphics.Rect
+import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
+import android.widget.Button
+import android.widget.Toast
 import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.BrowserFragment
+import org.mozilla.focus.browser.cursor.TvCursorLayout
 import org.mozilla.focus.ext.toSafeIntent
+import org.mozilla.focus.home.CustomTilesManager
 import org.mozilla.focus.home.HomeFragment
 import org.mozilla.focus.iwebview.WebViewProvider
 import org.mozilla.focus.locale.LocaleAwareAppCompatActivity
@@ -32,8 +36,11 @@ class MainActivity :
     OnUrlEnteredListener {
 
     private val sessionManager = SessionManager.getInstance()
+
     private var fragmentsResumed = false
     private var pendingNavigation: Pair<String, Source>? = null
+
+    private lateinit var cursorRoot: TvCursorLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,9 +51,95 @@ class MainActivity :
 
         window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
 
         setContentView(R.layout.activity_main)
+
+        cursorRoot = findViewById(R.id.rootView)
+
+        findViewById<Button>(
+            R.id.tvHomeButton
+        ).setOnClickListener {
+            ScreenController.showHomeScreen(
+                supportFragmentManager,
+                this
+            )
+        }
+
+        findViewById<Button>(
+            R.id.tvBookmarkButton
+        ).setOnClickListener {
+            saveBookmark()
+        }
+
+        findViewById<Button>(
+            R.id.tvMenuButton
+        ).setOnClickListener {
+            if (browser()?.isVisible == true) {
+                dispatchKeyEvent(
+                    KeyEvent(
+                        KeyEvent.ACTION_DOWN,
+                        KeyEvent.KEYCODE_MENU
+                    )
+                )
+
+                dispatchKeyEvent(
+                    KeyEvent(
+                        KeyEvent.ACTION_UP,
+                        KeyEvent.KEYCODE_MENU
+                    )
+                )
+            } else {
+                ScreenController.showSettingsScreen(
+                    supportFragmentManager
+                )
+            }
+        }
+
+        findViewById<Button>(
+            R.id.tvSettingsButton
+        ).setOnClickListener {
+            ScreenController.showSettingsScreen(
+                supportFragmentManager
+            )
+        }
+
+        cursorRoot.scrollPage = { x, y, dx, dy ->
+            val page = browser()
+            val view = page?.webView as? View
+            val bounds = Rect()
+
+            if (page?.isVisible == true &&
+                !page.browserOverlay.isShown &&
+                view != null &&
+                view.isShown
+            ) {
+                view.getDrawingRect(bounds)
+
+                cursorRoot.offsetDescendantRectToMyCoords(
+                    view,
+                    bounds
+                )
+
+                if (bounds.contains(
+                        x.toInt(),
+                        y.toInt()
+                    )
+                ) {
+                    page.webView?.scrollByClamped(dx, dy)
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+
+        cursorRoot.viewTreeObserver
+            .addOnGlobalLayoutListener {
+                updateToolbar()
+            }
 
         IntentValidator.validateOnCreate(
             this,
@@ -67,14 +160,14 @@ class MainActivity :
                             this@MainActivity
                         )
                     } else {
-                        ScreenController.showBrowserScreenForCurrentSession(
-                            supportFragmentManager,
-                            sessionManager
-                        )
+                        ScreenController
+                            .showBrowserScreenForCurrentSession(
+                                supportFragmentManager,
+                                sessionManager
+                            )
                     }
 
-                    if (
-                        Settings.getInstance(
+                    if (Settings.getInstance(
                             this@MainActivity
                         ).shouldShowOnboarding()
                     ) {
@@ -102,9 +195,11 @@ class MainActivity :
         )
     }
 
-    private fun onValidBrowserIntent(url: String, source: Source) {
-        if (
-            !fragmentsResumed ||
+    private fun onValidBrowserIntent(
+        url: String,
+        source: Source
+    ) {
+        if (!fragmentsResumed ||
             supportFragmentManager.isStateSaved
         ) {
             pendingNavigation = url to source
@@ -137,7 +232,7 @@ class MainActivity :
     }
 
     override fun applyLocale() {
-        // Individual fragments apply their locale.
+        // Fragments update their own displayed content.
     }
 
     override fun onResume() {
@@ -146,6 +241,10 @@ class MainActivity :
     }
 
     override fun onPause() {
+        if (::cursorRoot.isInitialized) {
+            cursorRoot.pausePointer()
+        }
+
         fragmentsResumed = false
         super.onPause()
         TelemetryWrapper.stopSession(this)
@@ -157,15 +256,11 @@ class MainActivity :
     }
 
     override fun onBackPressed() {
-        val browserFragment =
-            supportFragmentManager.findFragmentByTag(
-                BrowserFragment.FRAGMENT_TAG
-            ) as BrowserFragment?
+        val page = browser()
 
-        if (
-            browserFragment != null &&
-            browserFragment.isVisible &&
-            browserFragment.onBackPressed()
+        if (page != null &&
+            page.isVisible &&
+            page.onBackPressed()
         ) {
             return
         }
@@ -173,8 +268,12 @@ class MainActivity :
         super.onBackPressed()
     }
 
-    override fun onNonTextInputUrlEntered(urlStr: String) {
-        ViewUtils.hideKeyboard(findViewById(R.id.container))
+    override fun onNonTextInputUrlEntered(
+        urlStr: String
+    ) {
+        ViewUtils.hideKeyboard(
+            findViewById(R.id.container)
+        )
 
         ScreenController.onUrlEnteredInner(
             this,
@@ -188,10 +287,13 @@ class MainActivity :
 
     override fun onTextInputUrlEntered(
         urlStr: String,
-        autocompleteResult: InlineAutocompleteEditText.AutocompleteResult?,
+        autocompleteResult:
+            InlineAutocompleteEditText.AutocompleteResult?,
         inputLocation: UrlTextInputLocation?
     ) {
-        ViewUtils.hideKeyboard(findViewById(R.id.container))
+        ViewUtils.hideKeyboard(
+            findViewById(R.id.container)
+        )
 
         ScreenController.onUrlEnteredInner(
             this,
@@ -203,31 +305,112 @@ class MainActivity :
         )
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val browserFragment =
-            supportFragmentManager.findFragmentByTag(
-                BrowserFragment.FRAGMENT_TAG
-            ) as BrowserFragment?
+    override fun dispatchKeyEvent(
+        event: KeyEvent
+    ): Boolean {
+        if (::cursorRoot.isInitialized) {
+            if (cursorRoot.handleRemoteKey(event)) {
+                return true
+            }
 
-        val homeFragment =
-            supportFragmentManager.findFragmentByTag(
+            if (cursorRoot.keyboardVisible()) {
+                return super.dispatchKeyEvent(event)
+            }
+        }
+
+        val page = browser()
+
+        val home = supportFragmentManager
+            .findFragmentByTag(
                 HomeFragment.FRAGMENT_TAG
-            ) as HomeFragment?
+            ) as? HomeFragment
 
-        return if (
-            browserFragment != null &&
-            browserFragment.isVisible
-        ) {
-            browserFragment.dispatchKeyEvent(event) ||
+        return if (page != null && page.isVisible) {
+            page.dispatchKeyEvent(event) ||
                 super.dispatchKeyEvent(event)
-        } else if (
-            homeFragment != null &&
-            homeFragment.isVisible
-        ) {
-            homeFragment.dispatchKeyEvent(event) ||
+        } else if (home != null && home.isVisible) {
+            home.dispatchKeyEvent(event) ||
                 super.dispatchKeyEvent(event)
         } else {
             super.dispatchKeyEvent(event)
+        }
+    }
+
+    private fun browser() =
+        supportFragmentManager.findFragmentByTag(
+            BrowserFragment.FRAGMENT_TAG
+        ) as? BrowserFragment
+
+    private fun bookmarkUrl(): String? {
+        val page = browser()?.takeIf {
+            it.isVisible
+        } ?: return null
+
+        val url = page.webView?.getUrl()
+            ?: page.url
+            ?: return null
+
+        val scheme = Uri.parse(url).scheme
+
+        return url.takeIf {
+            scheme == "https" || scheme == "http"
+        }
+    }
+
+    private fun saveBookmark() {
+        val url = bookmarkUrl() ?: return
+        val manager = CustomTilesManager.getInstance(this)
+
+        val message = if (manager.isURLPinned(url)) {
+            R.string.tv_bookmark_exists
+        } else {
+            manager.pinSite(this, url, null)
+            R.string.tv_bookmark_saved
+        }
+
+        Toast.makeText(
+            this,
+            message,
+            Toast.LENGTH_SHORT
+        ).show()
+
+        updateToolbar()
+    }
+
+    private fun updateToolbar() {
+        val toolbar =
+            findViewById<View>(R.id.tvToolbar) ?: return
+
+        val page = browser()
+
+        toolbar.visibility =
+            if (page?.isVisible == true &&
+                page.isInFullscreen
+            ) {
+                View.GONE
+            } else {
+                View.VISIBLE
+            }
+
+        val button =
+            findViewById<Button>(R.id.tvBookmarkButton)
+
+        val url = bookmarkUrl()
+        button.isEnabled = url != null
+
+        val label =
+            if (url != null &&
+                CustomTilesManager
+                    .getInstance(this)
+                    .isURLPinned(url)
+            ) {
+                getString(R.string.tv_bookmarked)
+            } else {
+                getString(R.string.tv_bookmark)
+            }
+
+        if (button.text.toString() != label) {
+            button.text = label
         }
     }
 }
