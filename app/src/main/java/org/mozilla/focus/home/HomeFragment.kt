@@ -27,9 +27,10 @@ import org.mozilla.focus.utils.OnUrlEnteredListener
 import org.mozilla.focus.widget.InlineAutocompleteEditText
 import org.mozilla.tv.firefox.R
 
-/** Local homepage using the existing Firefox saved-site storage. */
 class HomeFragment : Fragment() {
-    var onUrlEnteredListener = object : OnUrlEnteredListener {}
+    var onUrlEnteredListener =
+        object : OnUrlEnteredListener {}
+
     var onSettingsPressed: (() -> Unit)? = null
 
     val urlAutoCompleteFilter = UrlAutoCompleteFilter()
@@ -38,6 +39,21 @@ class HomeFragment : Fragment() {
 
     private var input: InlineAutocompleteEditText? = null
     private var bookmarks: LinearLayout? = null
+
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+
+        onUrlEnteredListener =
+            context as? OnUrlEnteredListener
+                ?: object : OnUrlEnteredListener {}
+    }
+
+    override fun onDetach() {
+        onUrlEnteredListener =
+            object : OnUrlEnteredListener {}
+
+        super.onDetach()
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -93,7 +109,6 @@ class HomeFragment : Fragment() {
                 setSingleLine(true)
                 setTextColor(Color.rgb(32, 33, 36))
                 setHintTextColor(Color.DKGRAY)
-
                 textSize = 20f
 
                 setPadding(
@@ -114,16 +129,26 @@ class HomeFragment : Fragment() {
 
         urlBar.addView(
             editor,
-            LinearLayout.LayoutParams(0, dp(56), 1f)
+            LinearLayout.LayoutParams(
+                0,
+                dp(56),
+                1f
+            )
         )
 
         urlBar.addView(
             Button(context).apply {
                 text = getString(R.string.tv_go)
                 isAllCaps = false
-                setOnClickListener { submitAddress() }
+
+                setOnClickListener {
+                    submitAddress()
+                }
             },
-            LinearLayout.LayoutParams(dp(88), dp(56))
+            LinearLayout.LayoutParams(
+                dp(88),
+                dp(56)
+            )
         )
 
         body.addView(urlBar)
@@ -157,7 +182,6 @@ class HomeFragment : Fragment() {
         }
 
         body.addView(bookmarks)
-
         return scroll
     }
 
@@ -200,6 +224,7 @@ class HomeFragment : Fragment() {
                     setPadding(0, dp(24), 0, 0)
                 }
             )
+
             return
         }
 
@@ -225,13 +250,19 @@ class HomeFragment : Fragment() {
                     contentDescription = name
                     isAllCaps = false
                     textSize = 17f
-                    setTextColor(Color.rgb(32, 33, 36))
+
+                    setTextColor(
+                        Color.rgb(32, 33, 36)
+                    )
+
                     maxLines = 4
                     background = background()
 
                     setOnClickListener {
                         onUrlEnteredListener
-                            .onNonTextInputUrlEntered(tile.url)
+                            .onNonTextInputUrlEntered(
+                                tile.url
+                            )
                     }
 
                     setOnLongClickListener {
@@ -247,7 +278,10 @@ class HomeFragment : Fragment() {
                             ) { _, _ ->
                                 CustomTilesManager
                                     .getInstance(context)
-                                    .unpinSite(context, tile.url)
+                                    .unpinSite(
+                                        context,
+                                        tile.url
+                                    )
 
                                 refreshBookmarks()
                             }
@@ -322,7 +356,9 @@ class HomeFragment : Fragment() {
 
         return StateListDrawable().apply {
             addState(
-                intArrayOf(android.R.attr.state_pressed),
+                intArrayOf(
+                    android.R.attr.state_pressed
+                ),
                 shape(
                     0xFFD8E7FC.toInt(),
                     0xFF4285F4.toInt()
@@ -330,7 +366,9 @@ class HomeFragment : Fragment() {
             )
 
             addState(
-                intArrayOf(android.R.attr.state_focused),
+                intArrayOf(
+                    android.R.attr.state_focused
+                ),
                 shape(
                     0xFFE8EFF8.toInt(),
                     0xFF4285F4.toInt()
