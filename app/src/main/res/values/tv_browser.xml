@@ -13,4 +13,6 @@
     <string name="tv_remove">Remove</string>
     <string name="tv_bookmark_saved">Bookmark saved to the homepage.</string>
     <string name="tv_bookmark_exists">This site is already saved on the homepage.</string>
+    <string name="tv_downloads">Downloads</string>
+    <string name="tv_history">History</string>
 </resources>
