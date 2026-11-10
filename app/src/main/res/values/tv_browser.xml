@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tv_home_title">Mom’s Firefox TV Browser</string>
+    <string name="tv_go">Go</string>
+    <string name="tv_home">Home</string>
+    <string name="tv_bookmark">Bookmark</string>
+    <string name="tv_bookmarked">Bookmarked ✓</string>
+    <string name="tv_menu">Menu</string>
+    <string name="tv_saved_sites">Saved bookmarks</string>
+    <string name="tv_saved_sites_hint">Select a site to open it. Hold OK on a tile to remove it.</string>
+    <string name="tv_no_bookmarks">Open a website, then select Bookmark above to add it here.</string>
+    <string name="tv_remove_bookmark_question">Remove this bookmark from the homepage?</string>
+    <string name="tv_remove">Remove</string>
+    <string name="tv_bookmark_saved">Bookmark saved to the homepage.</string>
+    <string name="tv_bookmark_exists">This site is already saved on the homepage.</string>
+</resources>
