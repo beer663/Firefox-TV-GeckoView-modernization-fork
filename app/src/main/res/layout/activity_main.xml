@@ -41,6 +41,20 @@
                 android:textAllCaps="false" />
 
             <Button
+                android:id="@+id/tvDownloadsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_downloads"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/tvHistoryButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/tv_history"
+                android:textAllCaps="false" />
+
+            <Button
                 android:id="@+id/tvSettingsButton"
                 android:layout_width="wrap_content"
                 android:layout_height="48dp"
