@@ -14,6 +14,7 @@ import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.BrowserFragment
 import org.mozilla.focus.browser.cursor.TvCursorLayout
 import org.mozilla.focus.ext.toSafeIntent
+import org.mozilla.focus.extensions.ExtensionPermissions
 import org.mozilla.focus.home.CustomTilesManager
 import org.mozilla.focus.home.HomeFragment
 import org.mozilla.focus.iwebview.WebViewProvider
@@ -35,12 +36,18 @@ class MainActivity :
     LocaleAwareAppCompatActivity(),
     OnUrlEnteredListener {
 
-    private val sessionManager = SessionManager.getInstance()
+    private val sessionManager =
+        SessionManager.getInstance()
 
     private var fragmentsResumed = false
-    private var pendingNavigation: Pair<String, Source>? = null
+    private var pendingNavigation:
+        Pair<String, Source>? = null
 
     private lateinit var cursorRoot: TvCursorLayout
+
+    private val extensionPermissions by lazy {
+        ExtensionPermissions(this)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,27 +80,19 @@ class MainActivity :
         }
 
         findViewById<Button>(
-            R.id.tvMenuButton
+            R.id.tvDownloadsButton
         ).setOnClickListener {
-            if (browser()?.isVisible == true) {
-                dispatchKeyEvent(
-                    KeyEvent(
-                        KeyEvent.ACTION_DOWN,
-                        KeyEvent.KEYCODE_MENU
-                    )
-                )
+            ScreenController.showDownloadsScreen(
+                supportFragmentManager
+            )
+        }
 
-                dispatchKeyEvent(
-                    KeyEvent(
-                        KeyEvent.ACTION_UP,
-                        KeyEvent.KEYCODE_MENU
-                    )
-                )
-            } else {
-                ScreenController.showSettingsScreen(
-                    supportFragmentManager
-                )
-            }
+        findViewById<Button>(
+            R.id.tvHistoryButton
+        ).setOnClickListener {
+            ScreenController.showHistoryScreen(
+                supportFragmentManager
+            )
         }
 
         findViewById<Button>(
@@ -109,7 +108,8 @@ class MainActivity :
             val view = page?.webView as? View
             val bounds = Rect()
 
-            if (page?.isVisible == true &&
+            if (
+                page?.isVisible == true &&
                 !page.browserOverlay.isShown &&
                 view != null &&
                 view.isShown
@@ -121,12 +121,16 @@ class MainActivity :
                     bounds
                 )
 
-                if (bounds.contains(
+                if (
+                    bounds.contains(
                         x.toInt(),
                         y.toInt()
                     )
                 ) {
-                    page.webView?.scrollByClamped(dx, dy)
+                    page.webView?.scrollByClamped(
+                        dx,
+                        dy
+                    )
                     true
                 } else {
                     false
@@ -167,7 +171,8 @@ class MainActivity :
                             )
                     }
 
-                    if (Settings.getInstance(
+                    if (
+                        Settings.getInstance(
                             this@MainActivity
                         ).shouldShowOnboarding()
                     ) {
@@ -199,7 +204,8 @@ class MainActivity :
         url: String,
         source: Source
     ) {
-        if (!fragmentsResumed ||
+        if (
+            !fragmentsResumed ||
             supportFragmentManager.isStateSaved
         ) {
             pendingNavigation = url to source
@@ -219,9 +225,13 @@ class MainActivity :
         super.onResumeFragments()
         fragmentsResumed = true
 
-        if (supportFragmentManager.isStateSaved) return
+        if (
+            supportFragmentManager.isStateSaved
+        ) return
 
-        val navigation = pendingNavigation ?: return
+        val navigation =
+            pendingNavigation ?: return
+
         pendingNavigation = null
 
         ScreenController.showBrowserScreenForUrl(
@@ -237,10 +247,13 @@ class MainActivity :
 
     override fun onResume() {
         super.onResume()
+        extensionPermissions.attach()
         TelemetryWrapper.startSession(this)
     }
 
     override fun onPause() {
+        extensionPermissions.detach()
+
         if (::cursorRoot.isInitialized) {
             cursorRoot.pausePointer()
         }
@@ -258,7 +271,8 @@ class MainActivity :
     override fun onBackPressed() {
         val page = browser()
 
-        if (page != null &&
+        if (
+            page != null &&
             page.isVisible &&
             page.onBackPressed()
         ) {
@@ -309,26 +323,34 @@ class MainActivity :
         event: KeyEvent
     ): Boolean {
         if (::cursorRoot.isInitialized) {
-            if (cursorRoot.handleRemoteKey(event)) {
+            if (
+                cursorRoot.handleRemoteKey(event)
+            ) {
                 return true
             }
 
-            if (cursorRoot.keyboardVisible()) {
+            if (
+                cursorRoot.keyboardVisible()
+            ) {
                 return super.dispatchKeyEvent(event)
             }
         }
 
         val page = browser()
 
-        val home = supportFragmentManager
-            .findFragmentByTag(
+        val home =
+            supportFragmentManager.findFragmentByTag(
                 HomeFragment.FRAGMENT_TAG
             ) as? HomeFragment
 
-        return if (page != null && page.isVisible) {
+        return if (
+            page != null && page.isVisible
+        ) {
             page.dispatchKeyEvent(event) ||
                 super.dispatchKeyEvent(event)
-        } else if (home != null && home.isVisible) {
+        } else if (
+            home != null && home.isVisible
+        ) {
             home.dispatchKeyEvent(event) ||
                 super.dispatchKeyEvent(event)
         } else {
@@ -346,9 +368,10 @@ class MainActivity :
             it.isVisible
         } ?: return null
 
-        val url = page.webView?.getUrl()
-            ?: page.url
-            ?: return null
+        val url =
+            page.webView?.getUrl() ?:
+            page.url ?:
+            return null
 
         val scheme = Uri.parse(url).scheme
 
@@ -359,9 +382,13 @@ class MainActivity :
 
     private fun saveBookmark() {
         val url = bookmarkUrl() ?: return
-        val manager = CustomTilesManager.getInstance(this)
 
-        val message = if (manager.isURLPinned(url)) {
+        val manager =
+            CustomTilesManager.getInstance(this)
+
+        val message = if (
+            manager.isURLPinned(url)
+        ) {
             R.string.tv_bookmark_exists
         } else {
             manager.pinSite(this, url, null)
@@ -379,12 +406,15 @@ class MainActivity :
 
     private fun updateToolbar() {
         val toolbar =
-            findViewById<View>(R.id.tvToolbar) ?: return
+            findViewById<View>(
+                R.id.tvToolbar
+            ) ?: return
 
         val page = browser()
 
         toolbar.visibility =
-            if (page?.isVisible == true &&
+            if (
+                page?.isVisible == true &&
                 page.isInFullscreen
             ) {
                 View.GONE
@@ -393,23 +423,27 @@ class MainActivity :
             }
 
         val button =
-            findViewById<Button>(R.id.tvBookmarkButton)
+            findViewById<Button>(
+                R.id.tvBookmarkButton
+            )
 
         val url = bookmarkUrl()
         button.isEnabled = url != null
 
-        val label =
-            if (url != null &&
-                CustomTilesManager
-                    .getInstance(this)
-                    .isURLPinned(url)
-            ) {
-                getString(R.string.tv_bookmarked)
-            } else {
-                getString(R.string.tv_bookmark)
-            }
+        val label = if (
+            url != null &&
+            CustomTilesManager
+                .getInstance(this)
+                .isURLPinned(url)
+        ) {
+            getString(R.string.tv_bookmarked)
+        } else {
+            getString(R.string.tv_bookmark)
+        }
 
-        if (button.text.toString() != label) {
+        if (
+            button.text.toString() != label
+        ) {
             button.text = label
         }
     }
