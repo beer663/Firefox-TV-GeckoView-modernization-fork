@@ -1,13 +1,12 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
+ * License, v. 2.0. https://mozilla.org/MPL/2.0/ */
 package org.mozilla.focus.browser.cursor
 
 import android.graphics.PointF
 import android.view.KeyEvent
 import android.view.View
 import android.view.accessibility.AccessibilityManager
+import androidx.annotation.UiThread
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleObserver
 import androidx.lifecycle.OnLifecycleEvent
@@ -16,6 +15,7 @@ import org.mozilla.focus.browser.BrowserFragment
 import org.mozilla.focus.ext.getAccessibilityManager
 import org.mozilla.focus.ext.isVisible
 import org.mozilla.focus.ext.isVoiceViewEnabled
+import org.mozilla.tv.firefox.R
 import kotlin.properties.Delegates
 
 private const val MAX_SCROLL_VELOCITY = 13
@@ -31,7 +31,8 @@ class CursorController(
         _, _, newValue ->
 
         keyDispatcher.isEnabled = newValue
-        view.visibility = if (newValue) View.VISIBLE else View.GONE
+        view.visibility =
+            if (newValue) View.VISIBLE else View.GONE
     }
 
     private val viewModel = CursorViewModel(
@@ -40,7 +41,8 @@ class CursorController(
             scrollWebView(percentMaxScrollVel, framesPassed)
         },
         simulateTouchEvent = {
-            browserFragment.requireActivity().dispatchTouchEvent(it)
+            browserFragment.requireActivity()
+                .dispatchTouchEvent(it)
         }
     )
 
@@ -63,7 +65,10 @@ class CursorController(
         }
     )
 
-    fun dispatchSelectClick(down: KeyEvent, up: KeyEvent): Boolean {
+    fun dispatchSelectClick(
+        down: KeyEvent,
+        up: KeyEvent
+    ): Boolean {
         if (!isEnabled) return false
 
         viewModel.onSelectKeyEvent(KeyEvent.ACTION_DOWN)
@@ -89,16 +94,20 @@ class CursorController(
     }
 
     fun setEnabledForCurrentState() {
+        val host = browserFragment.view
+            ?.rootView
+            ?.findViewById<View>(R.id.rootView)
+
         isEnabled =
+            host !is TvCursorLayout &&
             browserFragment.webView != null &&
-            (
-                if (browserFragment.isInFullscreen) {
-                    browserFragment.isFullscreenPointerEnabled
-                } else {
-                    browserFragment.webView?.isYoutubeTV != true
-                }
-            ) &&
-            !browserFragment.requireContext().isVoiceViewEnabled() &&
+            (if (browserFragment.isInFullscreen) {
+                browserFragment.isFullscreenPointerEnabled
+            } else {
+                browserFragment.webView?.isYoutubeTV != true
+            }) &&
+            !browserFragment.requireContext()
+                .isVoiceViewEnabled() &&
             !browserFragment.browserOverlay.isVisible
 
         if (!isEnabled) {
@@ -146,7 +155,9 @@ class CursorController(
         }
     }
 
-    override fun onTouchExplorationStateChanged(isEnabled: Boolean) {
+    override fun onTouchExplorationStateChanged(
+        isEnabled: Boolean
+    ) {
         setEnabledForCurrentState()
     }
 
