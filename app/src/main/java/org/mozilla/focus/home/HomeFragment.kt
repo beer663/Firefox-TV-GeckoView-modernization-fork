@@ -1,181 +1,361 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
+ * License, v. 2.0. https://mozilla.org/MPL/2.0/ */
 package org.mozilla.focus.home
 
-import android.animation.AnimatorSet
-import android.animation.ObjectAnimator
+import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
+import android.net.Uri
 import android.os.Bundle
-import androidx.fragment.app.Fragment
-import androidx.core.content.ContextCompat
-import androidx.recyclerview.widget.GridLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import android.util.TypedValue
-import android.view.ContextMenu
+import android.text.InputType
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.DecelerateInterpolator
+import android.view.inputmethod.EditorInfo
+import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ImageButton
-import android.widget.ImageView
+import android.widget.ScrollView
 import android.widget.TextView
-import org.mozilla.focus.widget.InlineAutocompleteEditText
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
-import org.mozilla.tv.firefox.R
+import androidx.appcompat.app.AlertDialog
+import androidx.fragment.app.Fragment
 import org.mozilla.focus.autocomplete.UrlAutoCompleteFilter
-import org.mozilla.focus.ext.forceExhaustive
-import org.mozilla.focus.ext.toJavaURI
-import org.mozilla.focus.ext.toUri
-import org.mozilla.focus.ext.withRoundedCorners
-import org.mozilla.focus.telemetry.TelemetryWrapper
 import org.mozilla.focus.telemetry.UrlTextInputLocation
-import org.mozilla.focus.utils.FormattedDomain
 import org.mozilla.focus.utils.OnUrlEnteredListener
+import org.mozilla.focus.widget.InlineAutocompleteEditText
+import org.mozilla.tv.firefox.R
 
-private const val COL_COUNT = 5
-private const val SETTINGS_ICON_IDLE_ALPHA = 0.4f
-private const val SETTINGS_ICON_ACTIVE_ALPHA = 1.0f
-
-/**
- * Duration of animation to show custom tile. If the duration is too short, the tile will just
- * pop-in. I speculate this happens because the amount of time it takes to downsample the bitmap
- * is longer than the animation duration.
- */
-private const val CUSTOM_TILE_TO_SHOW_MILLIS = 200L
-private val CUSTOM_TILE_ICON_INTERPOLATOR = DecelerateInterpolator()
-
-/** The home fragment which displays the navigation tiles of the app. */
+/** Local homepage using the existing Firefox saved-site storage. */
 class HomeFragment : Fragment() {
-    private val settingsButton get() = requireView().findViewById<ImageButton>(R.id.settingsButton)
-    private val tileContainer get() = requireView().findViewById<RecyclerView>(R.id.tileContainer)
-    private val urlInputView get() = requireView().findViewById<InlineAutocompleteEditText>(R.id.urlInputView)
-
-
-    lateinit var urlBar: LinearLayout
-    var onUrlEnteredListener = object : OnUrlEnteredListener {} // default impl does nothing.
+    var onUrlEnteredListener = object : OnUrlEnteredListener {}
     var onSettingsPressed: (() -> Unit)? = null
+
     val urlAutoCompleteFilter = UrlAutoCompleteFilter()
 
-    /**
-     * Used to cancel background->UI threads: we attach them as children to this job
-     * and cancel this job at the end of the UI lifecycle, cancelling the children.
-     */
-    private lateinit var uiLifecycleCancelJob: Job
+    lateinit var urlBar: LinearLayout
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        val rootView = inflater.inflate(R.layout.fragment_home, container, false)
-        urlBar = rootView.findViewById(R.id.homeUrlBar)
-        return rootView
-    }
+    private var input: InlineAutocompleteEditText? = null
+    private var bookmarks: LinearLayout? = null
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        // todo: saved instance state?
-        uiLifecycleCancelJob = Job()
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        state: Bundle?
+    ): View {
+        val context = requireContext()
 
-        initTiles()
-        initUrlInputView()
-
-        settingsButton.alpha = SETTINGS_ICON_IDLE_ALPHA
-        settingsButton.setImageResource(R.drawable.ic_settings) // Must be set in code for SVG to work correctly.
-        settingsButton.setOnFocusChangeListener { v, hasFocus ->
-            v.alpha = if (hasFocus) SETTINGS_ICON_ACTIVE_ALPHA else SETTINGS_ICON_IDLE_ALPHA
+        val scroll = ScrollView(context).apply {
+            setBackgroundColor(Color.rgb(228, 226, 221))
+            isFillViewport = true
         }
 
-        settingsButton.setOnClickListener { v ->
-            onSettingsPressed?.invoke()
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(32), dp(28), dp(32), dp(32))
         }
 
-        registerForContextMenu(tileContainer)
+        scroll.addView(
+            body,
+            ViewGroup.LayoutParams(-1, -2)
+        )
 
-        tileContainer.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                val gridLayoutManager = recyclerView.layoutManager as GridLayoutManager
-                val lastVisibleItem = gridLayoutManager.findLastCompletelyVisibleItemPosition()
-                // We add a scroll offset, revealing the next row to hint that there are more home tiles
-                if (dy > 0 && getFocusedTilePosition() > lastVisibleItem) {
-                    val scrollOffset = TypedValue.applyDimension(
-                            TypedValue.COMPLEX_UNIT_DIP, (recyclerView.getChildAt(0)?.height ?: 0).toFloat() / 2, requireContext().resources.displayMetrics)
-                    recyclerView.smoothScrollBy(0, scrollOffset.toInt())
-                }
+        body.addView(
+            label(
+                context,
+                getString(R.string.tv_home_title),
+                25
+            ).apply {
+                gravity = Gravity.CENTER
             }
-        })
-    }
+        )
 
-    override fun onCreateContextMenu(menu: ContextMenu, v: View, menuInfo: ContextMenu.ContextMenuInfo?) {
-        super.onCreateContextMenu(menu, v, menuInfo)
-        requireActivity().menuInflater.inflate(R.menu.menu_context_hometile, menu)
-    }
-
-    override fun onContextItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
-            R.id.remove -> {
-                val homeTileAdapter = tileContainer.adapter as HomeTileAdapter
-                val tileToRemove = homeTileAdapter.getItemAtPosition(getFocusedTilePosition()) ?: return false
-                // This assumes that since we're deleting from a Home Tile object that we created
-                // that the Uri is valid, so we do not do error handling here.
-                when (tileToRemove) {
-                    is BundledHomeTile -> {
-                        val tileUri = tileToRemove.url.toUri()
-                        if (tileUri != null) {
-                            BundledTilesManager.getInstance(requireContext()).unpinSite(requireContext(), tileUri)
-                            homeTileAdapter.removeItemAtPosition(getFocusedTilePosition())
-                        }
-                    }
-                    is CustomHomeTile -> {
-                        CustomTilesManager.getInstance(requireContext()).unpinSite(requireContext(), tileToRemove.url)
-                        homeTileAdapter.removeItemAtPosition(getFocusedTilePosition())
-                    }
-                }
-                TelemetryWrapper.homeTileRemovedEvent(tileToRemove)
-                return true
-            }
+        urlBar = LinearLayout(context).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(22), 0, dp(22))
         }
-        return false
-    }
 
-    override fun onDestroyView() {
-        super.onDestroyView()
-        uiLifecycleCancelJob.cancel(CancellationException("Parent lifecycle has ended"))
+        val editor =
+            InlineAutocompleteEditText(context, null).apply {
+                id = R.id.urlInputView
+                hint = getString(R.string.urlbar_hint)
+
+                inputType =
+                    InputType.TYPE_CLASS_TEXT or
+                    InputType.TYPE_TEXT_VARIATION_URI
+
+                imeOptions =
+                    EditorInfo.IME_ACTION_GO or
+                    EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                    EditorInfo.IME_FLAG_NO_FULLSCREEN
+
+                setSingleLine(true)
+                setTextColor(Color.rgb(32, 33, 36))
+                setHintTextColor(Color.DKGRAY)
+
+                textSize = 20f
+
+                setPadding(
+                    dp(16),
+                    dp(8),
+                    dp(16),
+                    dp(8)
+                )
+
+                background = background()
+                isFocusableInTouchMode = true
+
+                importantForAutofill =
+                    View.IMPORTANT_FOR_AUTOFILL_NO
+            }
+
+        input = editor
+
+        urlBar.addView(
+            editor,
+            LinearLayout.LayoutParams(0, dp(56), 1f)
+        )
+
+        urlBar.addView(
+            Button(context).apply {
+                text = getString(R.string.tv_go)
+                isAllCaps = false
+                setOnClickListener { submitAddress() }
+            },
+            LinearLayout.LayoutParams(dp(88), dp(56))
+        )
+
+        body.addView(urlBar)
+
+        editor.setOnCommitListener {
+            submitAddress()
+        }
+
+        editor.setOnFilterListener { text, view ->
+            urlAutoCompleteFilter.onFilter(text, view)
+        }
+
+        body.addView(
+            label(
+                context,
+                getString(R.string.tv_saved_sites),
+                20
+            )
+        )
+
+        body.addView(
+            label(
+                context,
+                getString(R.string.tv_saved_sites_hint),
+                14
+            )
+        )
+
+        bookmarks = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        body.addView(bookmarks)
+
+        return scroll
     }
 
     override fun onResume() {
         super.onResume()
         urlAutoCompleteFilter.load(requireContext())
+        refreshBookmarks()
     }
 
-    override fun onAttachFragment(childFragment: Fragment) {
-        super.onAttachFragment(childFragment)
-        urlBar.requestFocus()
+    private fun submitAddress() {
+        val editor = input ?: return
+        val value = editor.text.toString().trim()
+
+        if (value.isNotEmpty()) {
+            onUrlEnteredListener.onTextInputUrlEntered(
+                value,
+                editor.lastAutocompleteResult,
+                UrlTextInputLocation.HOME
+            )
+        }
     }
 
-    private fun initTiles() = with (tileContainer) {
-        val homeTiles = mutableListOf<HomeTile>().apply {
-            addAll(BundledTilesManager.getInstance(context).getBundledHomeTilesList())
-            addAll(CustomTilesManager.getInstance(context).getCustomHomeTilesList())
+    private fun refreshBookmarks() {
+        val holder = bookmarks ?: return
+        val context = requireContext()
+
+        holder.removeAllViews()
+
+        val tiles = CustomTilesManager
+            .getInstance(context)
+            .getCustomHomeTilesList()
+
+        if (tiles.isEmpty()) {
+            holder.addView(
+                label(
+                    context,
+                    getString(R.string.tv_no_bookmarks),
+                    17
+                ).apply {
+                    setPadding(0, dp(24), 0, 0)
+                }
+            )
+            return
         }
 
-        adapter = HomeTileAdapter(uiLifecycleCancelJob, homeTiles, onUrlEnteredListener)
-        layoutManager = GridLayoutManager(context, COL_COUNT)
-        setHasFixedSize(true)
+        val columns = (
+            (
+                resources.displayMetrics.widthPixels /
+                    resources.displayMetrics.density - 64
+            ) / 180
+        ).toInt().coerceIn(2, 6)
+
+        for (group in tiles.chunked(columns)) {
+            val row = LinearLayout(context)
+
+            for (tile in group) {
+                val name = tile.title.takeIf {
+                    it.isNotBlank() && it != "custom"
+                } ?: Uri.parse(tile.url).host ?: tile.url
+
+                val button = Button(context).apply {
+                    text =
+                        "${name.take(1).uppercase()}\n\n$name"
+
+                    contentDescription = name
+                    isAllCaps = false
+                    textSize = 17f
+                    setTextColor(Color.rgb(32, 33, 36))
+                    maxLines = 4
+                    background = background()
+
+                    setOnClickListener {
+                        onUrlEnteredListener
+                            .onNonTextInputUrlEntered(tile.url)
+                    }
+
+                    setOnLongClickListener {
+                        AlertDialog.Builder(context)
+                            .setTitle(name)
+                            .setMessage(
+                                getString(
+                                    R.string.tv_remove_bookmark_question
+                                )
+                            )
+                            .setPositiveButton(
+                                R.string.tv_remove
+                            ) { _, _ ->
+                                CustomTilesManager
+                                    .getInstance(context)
+                                    .unpinSite(context, tile.url)
+
+                                refreshBookmarks()
+                            }
+                            .setNegativeButton(
+                                android.R.string.cancel,
+                                null
+                            )
+                            .show()
+
+                        true
+                    }
+                }
+
+                row.addView(
+                    button,
+                    LinearLayout.LayoutParams(
+                        0,
+                        dp(132),
+                        1f
+                    ).apply {
+                        setMargins(
+                            dp(6),
+                            dp(10),
+                            dp(6),
+                            dp(4)
+                        )
+                    }
+                )
+            }
+
+            repeat(columns - group.size) {
+                row.addView(
+                    View(context),
+                    LinearLayout.LayoutParams(
+                        0,
+                        dp(132),
+                        1f
+                    ).apply {
+                        setMargins(
+                            dp(6),
+                            dp(10),
+                            dp(6),
+                            dp(4)
+                        )
+                    }
+                )
+            }
+
+            holder.addView(row)
+        }
     }
 
-    private fun initUrlInputView() = with (urlInputView) {
-        setOnCommitListener {
-            onUrlEnteredListener.onTextInputUrlEntered(text.toString(), urlInputView.lastAutocompleteResult, UrlTextInputLocation.HOME)
+    private fun label(
+        context: Context,
+        value: String,
+        size: Int
+    ) = TextView(context).apply {
+        text = value
+        textSize = size.toFloat()
+        setTextColor(Color.rgb(32, 33, 36))
+    }
+
+    private fun background(): StateListDrawable {
+        fun shape(
+            color: Int,
+            border: Int
+        ) = GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(14).toFloat()
+            setStroke(dp(2), border)
         }
-        setOnFilterListener { searchText, view -> urlAutoCompleteFilter.onFilter(searchText, view) }
+
+        return StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_pressed),
+                shape(
+                    0xFFD8E7FC.toInt(),
+                    0xFF4285F4.toInt()
+                )
+            )
+
+            addState(
+                intArrayOf(android.R.attr.state_focused),
+                shape(
+                    0xFFE8EFF8.toInt(),
+                    0xFF4285F4.toInt()
+                )
+            )
+
+            addState(
+                intArrayOf(),
+                shape(
+                    0xFFEFEDE8.toInt(),
+                    0xFFC9C7C1.toInt()
+                )
+            )
+        }
+    }
+
+    private fun dp(value: Int) =
+        (value * resources.displayMetrics.density).toInt()
+
+    fun dispatchKeyEvent(event: KeyEvent): Boolean = false
+
+    override fun onDestroyView() {
+        input = null
+        bookmarks = null
+        super.onDestroyView()
     }
 
     companion object {
@@ -184,148 +364,4 @@ class HomeFragment : Fragment() {
         @JvmStatic
         fun create() = HomeFragment()
     }
-
-    fun getFocusedTilePosition(): Int {
-        val focusedView = activity?.currentFocus ?: return RecyclerView.NO_POSITION
-        return (focusedView.parent as? RecyclerView)?.getChildAdapterPosition(focusedView)
-                ?: RecyclerView.NO_POSITION
-    }
-
-    fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_MENU &&
-                event.action == KeyEvent.ACTION_UP &&
-                getFocusedTilePosition() != RecyclerView.NO_POSITION) {
-            requireActivity().openContextMenu(tileContainer)
-            return true
-        }
-        return false
-    }
-}
-
-private class HomeTileAdapter(
-        private val uiLifecycleCancelJob: Job,
-        private val tiles: MutableList<HomeTile>,
-        private val onUrlEnteredListener: OnUrlEnteredListener
-) : RecyclerView.Adapter<TileViewHolder>() {
-
-    override fun onBindViewHolder(holder: TileViewHolder, position: Int) = with (holder) {
-        val item = tiles[position]
-        when (item) {
-            is BundledHomeTile -> {
-                onBindBundledHomeTile(holder, item)
-                setLayoutMarginParams(iconView, R.dimen.bundled_home_tile_margin_value)
-            }
-            is CustomHomeTile -> {
-                onBindCustomHomeTile(uiLifecycleCancelJob, holder, item)
-                setLayoutMarginParams(iconView, R.dimen.custom_home_tile_margin_value)
-            }
-        }.forceExhaustive
-
-        itemView.setOnClickListener {
-            onUrlEnteredListener.onNonTextInputUrlEntered(item.url)
-            TelemetryWrapper.homeTileClickEvent(it.context, item)
-        }
-
-        val tvWhiteColor = ContextCompat.getColor(holder.itemView.context, R.color.tv_white)
-        itemView.setOnFocusChangeListener { v, hasFocus ->
-            val backgroundResource: Int
-            val textColor: Int
-            if (hasFocus) {
-                backgroundResource = R.drawable.home_tile_title_focused_background
-                textColor = tvWhiteColor
-                menuButton.visibility = View.VISIBLE
-            } else {
-                backgroundResource = 0
-                textColor = Color.BLACK
-                menuButton.visibility = View.GONE
-            }
-            titleView.setBackgroundResource(backgroundResource)
-            titleView.setTextColor(textColor)
-        }
-    }
-
-    private fun setLayoutMarginParams(iconView: View, tileMarginValue: Int) {
-        val layoutMarginParams = iconView.layoutParams as ViewGroup.MarginLayoutParams
-        val marginValue = iconView.resources.getDimensionPixelSize(tileMarginValue)
-        layoutMarginParams.setMargins(marginValue, marginValue, marginValue, marginValue)
-        iconView.layoutParams = layoutMarginParams
-    }
-
-    fun getItemAtPosition(position: Int): HomeTile? {
-        if (position > -1 && position < itemCount) {
-            return tiles[position]
-        }
-        return null
-    }
-
-    fun removeItemAtPosition(position: Int) {
-        if (position > -1 && position < itemCount) {
-            tiles.removeAt(position)
-            notifyItemRemoved(position)
-        }
-    }
-
-    override fun getItemCount() = tiles.size
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = TileViewHolder(
-            LayoutInflater.from(parent.context).inflate(R.layout.home_tile, parent, false)
-    )
-}
-
-private fun onBindBundledHomeTile(holder: TileViewHolder, tile: BundledHomeTile) = with (holder) {
-    val bitmap = BundledTilesManager.getInstance(itemView.context).loadImageFromPath(itemView.context, tile.imagePath)
-    iconView.setImageBitmap(bitmap)
-
-    titleView.text = tile.title
-}
-
-private fun onBindCustomHomeTile(uiLifecycleCancelJob: Job, holder: TileViewHolder, item: CustomHomeTile) = with (holder) {
-    CoroutineScope(uiLifecycleCancelJob + Dispatchers.Main).launch(start = CoroutineStart.UNDISPATCHED) {
-        val validUri = item.url.toJavaURI()
-
-        val screenshotDeferred = async(Dispatchers.IO) {
-            val homeTileCornerRadius = itemView.resources.getDimension(R.dimen.home_tile_corner_radius)
-            val homeTilePlaceholderCornerRadius = itemView.resources.getDimension(R.dimen.home_tile_placeholder_corner_radius)
-            val screenshot = HomeTileScreenshotStore.read(itemView.context, item.id)?.withRoundedCorners(homeTileCornerRadius)
-            screenshot ?: HomeTilePlaceholderGenerator.generate(itemView.context, item.url).withRoundedCorners(homeTilePlaceholderCornerRadius)
-        }
-
-        val titleDeferred = if (validUri == null) {
-            CompletableDeferred(item.url)
-        } else {
-            async(Dispatchers.Default) {
-                val subdomainDotDomain = FormattedDomain.format(itemView.context, validUri, false, 1)
-                FormattedDomain.stripCommonPrefixes(subdomainDotDomain)
-            }
-        }
-
-        // We wait for both to complete so we can animate them together.
-        val screenshot = screenshotDeferred.await()
-        val title = titleDeferred.await()
-
-        // NB: Don't suspend after this point (i.e. between view updates like setImage)
-        // so we don't see intermediate view states.
-        // TODO: It'd be less error-prone to launch { /* bg work */ launch(UI) { /* UI work */ } }
-        iconView.setImageBitmap(screenshot)
-        titleView.text = title
-
-        // Animate to avoid pop-in due to thread hand-offs. TODO: animation is janky.
-        AnimatorSet().apply {
-            interpolator = CUSTOM_TILE_ICON_INTERPOLATOR
-            duration = CUSTOM_TILE_TO_SHOW_MILLIS
-
-            val iconAnim = ObjectAnimator.ofInt(iconView, "imageAlpha", 0, 255)
-            val titleAnim = ObjectAnimator.ofFloat(titleView, "alpha", 0f, 1f)
-
-            playTogether(iconAnim, titleAnim)
-        }.start()
-    }
-}
-
-private class TileViewHolder(
-        itemView: View
-) : RecyclerView.ViewHolder(itemView) {
-    val iconView = itemView.findViewById<ImageView>(R.id.tile_icon)
-    val titleView = itemView.findViewById<TextView>(R.id.tile_title)
-    val menuButton = itemView.findViewById<View>(R.id.home_tile_menu_icon)
 }
