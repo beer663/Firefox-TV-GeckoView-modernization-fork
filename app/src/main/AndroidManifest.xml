@@ -34,7 +34,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
-        android:name="org.mozilla.focus.diagnostics.StartupDiagnosticsApplication"
+        android:name="org.mozilla.focus.FocusApplication"
         android:usesCleartextTraffic="true"
         tools:ignore="UnusedAttribute">
 
@@ -50,24 +50,18 @@
         </provider>
 
         <activity
-            android:name="org.mozilla.focus.diagnostics.StartupReportActivity"
-            android:process=":startup_report"
+            android:name="org.mozilla.focus.MainActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.Material.NoActionBar">
+            android:launchMode="singleTask"
+            android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize|locale|layoutDirection|smallestScreenSize|screenLayout"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden"
+            android:label="@string/app_name">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-
-        <activity
-            android:name="org.mozilla.focus.MainActivity"
-            android:launchMode="singleTask"
-            android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize|locale|layoutDirection|smallestScreenSize|screenLayout"
-            android:windowSoftInputMode="adjustResize|stateAlwaysHidden"
-            android:label="@string/app_name">
 
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -108,11 +102,6 @@
         <activity
             android:name="org.mozilla.focus.browser.InfoActivity"
             android:exported="false" />
-
-        <activity
-            android:name="org.mozilla.focus.OnboardingActivity"
-            android:exported="false"
-            android:theme="@style/AppTheme" />
 
         <activity
             android:name=".channels.ChannelOnboardingActivity"
