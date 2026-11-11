@@ -11,6 +11,8 @@ import android.view.View
 import android.widget.Button
 import android.widget.Toast
 import org.mozilla.focus.architecture.NonNullObserver
+import org.mozilla.focus.browser.BrowserSessionSupport
+import org.mozilla.focus.browser.cursor.RemoteKeyRouter
 import org.mozilla.focus.browser.BrowserFragment
 import org.mozilla.focus.browser.cursor.TvCursorLayout
 import org.mozilla.focus.ext.toSafeIntent
@@ -33,6 +35,8 @@ import org.mozilla.focus.widget.InlineAutocompleteEditText
 import org.mozilla.tv.firefox.R
 
 class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
+    val browserSupport = BrowserSessionSupport(this)
+    private val remoteKeys = RemoteKeyRouter<KeyEvent>()
     private val sessionManager = SessionManager.getInstance()
     private var fragmentsResumed = false
     private var pendingNavigation: Pair<String, Source>? = null
@@ -69,7 +73,6 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         findViewById<Button>(R.id.tvMenuButton).setOnClickListener {
             val page = browser()?.takeIf { it.isVisible }
             if (page != null) {
-                // Share the remote Menu handler, including fullscreen and focus handling.
                 page.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MENU))
                 page.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MENU))
             }
@@ -147,6 +150,7 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     override fun onPause() {
         extensionPermissions.detach()
         if (::cursorRoot.isInitialized) cursorRoot.pausePointer()
+        remoteKeys.reset()
         fragmentsResumed = false
         super.onPause()
         TelemetryWrapper.stopSession(this)
@@ -182,21 +186,41 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (::cursorRoot.isInitialized) {
-            if (cursorRoot.handleRemoteKey(event)) return true
-            if (cursorRoot.keyboardVisible()) return super.dispatchKeyEvent(event)
-        }
-        val page = browser()
+        if (!::cursorRoot.isInitialized) return super.dispatchKeyEvent(event)
+        val page = browser()?.takeIf { it.isVisible }
+        val overlay = page?.browserOverlay?.isShown == true
+        val fullscreen = page?.isInFullscreen == true
+        val select = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+            event.keyCode == KeyEvent.KEYCODE_ENTER ||
+            event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+        val nativeTv = page?.webView?.isYoutubeTV == true
+        val pointerEnabled = page == null || overlay ||
+            (if (fullscreen) page.isFullscreenPointerEnabled else !nativeTv)
         val home = supportFragmentManager.findFragmentByTag(
             HomeFragment.FRAGMENT_TAG
         ) as? HomeFragment
-        return when {
-            page != null && page.isVisible ->
-                page.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
-            home != null && home.isVisible ->
-                home.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
-            else -> super.dispatchKeyEvent(event)
-        }
+
+        return remoteKeys.dispatch(
+            event, event.action, event.keyCode, event.repeatCount,
+            cursorRoot.keyboardVisible(),
+            page != null && !overlay && fullscreen && select,
+            pointerEnabled,
+            { routed -> cursorRoot.handleRemoteKey(routed) },
+            { routed ->
+                when {
+                    page != null -> page.dispatchKeyEvent(routed)
+                    home?.isVisible == true -> home.dispatchKeyEvent(routed)
+                    else -> false
+                }
+            },
+            { routed -> super.dispatchKeyEvent(routed) },
+            { cursorRoot.pausePointer() }
+        )
+    }
+
+    override fun onDestroy() {
+        browserSupport.close()
+        super.onDestroy()
     }
 
     private fun browser() = supportFragmentManager.findFragmentByTag(
@@ -230,6 +254,11 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
             View.GONE
         } else View.VISIBLE
         findViewById<Button>(R.id.tvMenuButton).isEnabled = page?.isVisible == true
+
+        if (page?.isVisible == true && !page.browserOverlay.isShown &&
+            (if (page.isInFullscreen) !page.isFullscreenPointerEnabled
+             else page.webView?.isYoutubeTV == true)
+        ) cursorRoot.pausePointer()
 
         val button = findViewById<Button>(R.id.tvBookmarkButton)
         val url = bookmarkUrl()
