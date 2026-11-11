@@ -1,5 +1,5 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. https://mozilla.org/MPL/2.0/ */
+ * License, v. 2.0. https://mozilla.org/MPL/2.0/. */
 package org.mozilla.focus.browser.cursor
 
 import android.graphics.PointF
@@ -29,7 +29,6 @@ class CursorController(
 
     private var isEnabled: Boolean by Delegates.observable(true) {
         _, _, newValue ->
-
         keyDispatcher.isEnabled = newValue
         view.visibility =
             if (newValue) View.VISIBLE else View.GONE
@@ -69,6 +68,14 @@ class CursorController(
         down: KeyEvent,
         up: KeyEvent
     ): Boolean {
+        val host = browserFragment.view?.rootView
+            ?.findViewById<View>(R.id.rootView) as? TvCursorLayout
+
+        if (host != null) {
+            return browserFragment.isFullscreenPointerEnabled &&
+                host.dispatchSelectClick()
+        }
+
         if (!isEnabled) return false
 
         viewModel.onSelectKeyEvent(KeyEvent.ACTION_DOWN)
