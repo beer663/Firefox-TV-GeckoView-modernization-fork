@@ -33,7 +33,6 @@ enum class NavigationEvent {
             R.id.navButtonReload -> RELOAD
             R.id.navButtonHome -> HOME
             R.id.navButtonSettings -> SETTINGS
-            R.id.turboButton -> TURBO
             R.id.pinButton -> PIN_ACTION
             else -> null
         }
@@ -57,21 +56,15 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
     var onNavigationEvent: ((event: NavigationEvent, value: String?,
                              autocompleteResult: InlineAutocompleteEditText.AutocompleteResult?) -> Unit)? = null
     var navigationStateProvider: BrowserNavigationStateProvider? = null
+
     /** Called inside [setVisibility] right before super.setVisibility is called. */
     var onPreSetVisibilityListener: ((isVisible: Boolean) -> Unit)? = null
-
-    private var isTurboEnabled: Boolean
-        get() = Settings.getInstance(context).isBlockingEnabled
-        set(value) {
-            Settings.getInstance(context).isBlockingEnabled = value
-        }
 
     private val navButtonBack: ImageButton by lazy { findViewById(R.id.navButtonBack) }
     private val navButtonForward: ImageButton by lazy { findViewById(R.id.navButtonForward) }
     private val navButtonReload: ImageButton by lazy { findViewById(R.id.navButtonReload) }
     private val navButtonHome: ImageButton by lazy { findViewById(R.id.navButtonHome) }
     private val navButtonSettings: ImageButton by lazy { findViewById(R.id.navButtonSettings) }
-    private val turboButton: CheckableImageButton by lazy { findViewById(R.id.turboButton) }
     private val pinButton: CheckableImageButton by lazy { findViewById(R.id.pinButton) }
     private val navCloseHint: TextView by lazy { findViewById(R.id.navCloseHint) }
     private val navUrlInput: InlineAutocompleteEditText by lazy { findViewById(R.id.navUrlInput) }
@@ -81,17 +74,19 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
     init {
         LayoutInflater.from(context)
                 .inflate(R.layout.browser_overlay, this, true)
+
         listOf(navButtonBack, navButtonForward, navButtonReload, navButtonHome, navButtonSettings,
-                turboButton, pinButton)
+                pinButton)
                 .forEach {
                     it.setOnClickListener(this)
                 }
 
         setupUrlInput()
-        turboButton.isChecked = Settings.getInstance(context).isBlockingEnabled
-        navButtonSettings.setImageResource(R.drawable.ic_settings) // Must be set in code for SVG to work correctly.
+        navButtonSettings.setImageResource(R.drawable.ic_settings)
 
-        val tintDrawable: (Drawable?) -> Unit = { it?.setTint(ContextCompat.getColor(context, R.color.tv_white)) }
+        val tintDrawable: (Drawable?) -> Unit = {
+            it?.setTint(ContextCompat.getColor(context, R.color.tv_white))
+        }
         navCloseHint.compoundDrawablesRelative.forEach(tintDrawable)
         navUrlInput.compoundDrawablesRelative.forEach(tintDrawable)
     }
@@ -100,20 +95,23 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
         setOnCommitListener {
             val userInput = text.toString()
             if (userInput.isNotEmpty()) {
-                val cachedAutocompleteResult = lastAutocompleteResult // setText clears the reference so we cache it here.
+                val cachedAutocompleteResult = lastAutocompleteResult
                 setText(cachedAutocompleteResult.text)
                 onNavigationEvent?.invoke(NavigationEvent.LOAD, userInput, cachedAutocompleteResult)
             }
         }
+
         val autocompleteFilter = UrlAutoCompleteFilter()
         autocompleteFilter.load(context.applicationContext)
-        setOnFilterListener { searchText, view -> autocompleteFilter.onFilter(searchText, view) }
+        setOnFilterListener { searchText, view ->
+            autocompleteFilter.onFilter(searchText, view)
+        }
 
         setOnUserInputListener { hasUserChangedURLSinceEditTextFocused = true }
         setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) {
                 hasUserChangedURLSinceEditTextFocused = false
-                updateOverlayForCurrentState() // Update URL to overwrite user input, ensuring the url's accuracy.
+                updateOverlayForCurrentState()
             }
         }
     }
@@ -122,37 +120,38 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
         val event = NavigationEvent.fromViewClick(view?.id) ?: return
         var value: String? = null
 
-        val isTurboButtonChecked = turboButton.isChecked
+        val isTrackingProtectionEnabled = Settings.getInstance(context).isBlockingEnabled
         val isPinButtonChecked = pinButton.isChecked
+
         when (event) {
-            NavigationEvent.TURBO -> {
-                isTurboEnabled = isTurboButtonChecked
-            }
             NavigationEvent.PIN_ACTION -> {
                 value = if (isPinButtonChecked) NavigationEvent.VAL_CHECKED
                 else NavigationEvent.VAL_UNCHECKED
             }
             else -> Unit
         }
+
         onNavigationEvent?.invoke(event, value, null)
-        TelemetryWrapper.overlayClickEvent(event, isTurboButtonChecked, isPinButtonChecked)
+        TelemetryWrapper.overlayClickEvent(event, isTrackingProtectionEnabled, isPinButtonChecked)
     }
 
     fun updateOverlayForCurrentState() {
         val canGoBack = navigationStateProvider?.isBackEnabled() ?: false
         navButtonBack.isEnabled = canGoBack
         navButtonBack.isFocusable = canGoBack
-        navButtonBack.alpha = if (canGoBack) NAVIGATION_BUTTON_ENABLED_ALPHA else NAVIGATION_BUTTON_DISABLED_ALPHA
+        navButtonBack.alpha =
+            if (canGoBack) NAVIGATION_BUTTON_ENABLED_ALPHA
+            else NAVIGATION_BUTTON_DISABLED_ALPHA
 
         val canGoForward = navigationStateProvider?.isForwardEnabled() ?: false
         navButtonForward.isEnabled = canGoForward
         navButtonForward.isFocusable = canGoForward
-        navButtonForward.alpha = if (canGoForward) NAVIGATION_BUTTON_ENABLED_ALPHA else NAVIGATION_BUTTON_DISABLED_ALPHA
+        navButtonForward.alpha =
+            if (canGoForward) NAVIGATION_BUTTON_ENABLED_ALPHA
+            else NAVIGATION_BUTTON_DISABLED_ALPHA
 
         pinButton.isChecked = navigationStateProvider?.isURLPinned() ?: false
 
-        // Prevent the focus from looping to the bottom row when reaching the last
-        // focusable element in the top row
         navButtonReload.nextFocusLeftId = when {
             canGoForward -> R.id.navButtonForward
             canGoBack -> R.id.navButtonBack
@@ -171,18 +170,7 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
     }
 
     private fun maybeUpdateOverlayURLForCurrentState() {
-        // The url can get updated in the background, e.g. if a loading page is redirected. We
-        // don't want a url update to interrupt the user typing so we don't update the url from
-        // the background if the user has already updated the url themselves.
-        //
-        // We revert this state when the view is unfocused: it ensures the URL is usually accurate
-        // (for security reasons) and it's simple compared to other options which keep more state.
-        //
-        // One problem this solution has is that if the URL is updated in the background rapidly,
-        // sometimes key events will be dropped, but I don't think there's much we can do about this:
-        // we can't determine if the keyboard is up or not and focus isn't a good indicator because
-        // we can focus the EditText without opening the soft keyboard and the user won't even know
-        // these are inaccurate!
+        // Keep redirects reflected in the address field without replacing user input.
         if (!hasUserChangedURLSinceEditTextFocused) {
             navUrlInput.setText(navigationStateProvider?.getCurrentUrl())
         }
