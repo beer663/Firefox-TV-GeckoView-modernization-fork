@@ -1,5 +1,5 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. https://mozilla.org/MPL/2.0/ */
+ * License, v. 2.0. https://mozilla.org/MPL/2.0/. */
 package org.mozilla.focus.browser.cursor
 
 import android.content.Context
@@ -193,6 +193,15 @@ class TvCursorLayout @JvmOverloads constructor(
         } else {
             previousFrame = 0
         }
+    }
+
+    fun dispatchSelectClick(): Boolean {
+        pausePointer()
+        downTime = SystemClock.uptimeMillis()
+        val handled = sendTouch(MotionEvent.ACTION_DOWN)
+        sendTouch(MotionEvent.ACTION_UP)
+        reveal()
+        return handled
     }
 
     private fun sendTouch(action: Int): Boolean {
