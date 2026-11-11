@@ -31,7 +31,8 @@ public class FocusApplication extends LocaleAwareApplication {
 
         TelemetryWrapper.init(this);
 
-        registerActivityLifecycleCallbacks(visibilityLifeCycleCallback = new VisibilityLifeCycleCallback(this));
+        registerActivityLifecycleCallbacks(
+                visibilityLifeCycleCallback = new VisibilityLifeCycleCallback(this));
     }
 
     public VisibilityLifeCycleCallback getVisibilityLifeCycleCallback() {
@@ -39,16 +40,16 @@ public class FocusApplication extends LocaleAwareApplication {
     }
 
     private void enableStrictMode() {
-        // Android/WebView sometimes commit strict mode violations, see e.g.
-        // https://github.com/mozilla-mobile/focus-android/issues/660
         if (AppConstants.isReleaseBuild()) {
             return;
         }
 
-        final StrictMode.ThreadPolicy.Builder threadPolicyBuilder = new StrictMode.ThreadPolicy.Builder().detectAll();
-        final StrictMode.VmPolicy.Builder vmPolicyBuilder = new StrictMode.VmPolicy.Builder().detectAll();
+        final StrictMode.ThreadPolicy.Builder threadPolicyBuilder =
+                new StrictMode.ThreadPolicy.Builder().detectAll();
+        final StrictMode.VmPolicy.Builder vmPolicyBuilder =
+                new StrictMode.VmPolicy.Builder().detectAll();
 
-        threadPolicyBuilder.penaltyDialog();
+        threadPolicyBuilder.penaltyLog();
         vmPolicyBuilder.penaltyLog();
 
         StrictMode.setThreadPolicy(threadPolicyBuilder.build());
