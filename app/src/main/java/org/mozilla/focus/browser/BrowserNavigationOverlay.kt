@@ -15,7 +15,6 @@ import android.widget.ImageButton
 import android.widget.TextView
 import org.mozilla.focus.widget.CheckableImageButton
 import org.mozilla.tv.firefox.R
-import org.mozilla.focus.autocomplete.UrlAutoCompleteFilter
 import org.mozilla.focus.telemetry.TelemetryWrapper
 import org.mozilla.focus.utils.Settings
 import org.mozilla.focus.widget.InlineAutocompleteEditText
@@ -67,10 +66,6 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
     private val navButtonSettings: ImageButton by lazy { findViewById(R.id.navButtonSettings) }
     private val pinButton: CheckableImageButton by lazy { findViewById(R.id.pinButton) }
     private val navCloseHint: TextView by lazy { findViewById(R.id.navCloseHint) }
-    private val navUrlInput: InlineAutocompleteEditText by lazy { findViewById(R.id.navUrlInput) }
-
-    private var hasUserChangedURLSinceEditTextFocused = false
-
     init {
         LayoutInflater.from(context)
                 .inflate(R.layout.browser_overlay, this, true)
@@ -81,39 +76,12 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
                     it.setOnClickListener(this)
                 }
 
-        setupUrlInput()
         navButtonSettings.setImageResource(R.drawable.ic_settings)
 
         val tintDrawable: (Drawable?) -> Unit = {
             it?.setTint(ContextCompat.getColor(context, R.color.tv_white))
         }
         navCloseHint.compoundDrawablesRelative.forEach(tintDrawable)
-        navUrlInput.compoundDrawablesRelative.forEach(tintDrawable)
-    }
-
-    private fun setupUrlInput() = with (navUrlInput) {
-        setOnCommitListener {
-            val userInput = text.toString()
-            if (userInput.isNotEmpty()) {
-                val cachedAutocompleteResult = lastAutocompleteResult
-                setText(cachedAutocompleteResult.text)
-                onNavigationEvent?.invoke(NavigationEvent.LOAD, userInput, cachedAutocompleteResult)
-            }
-        }
-
-        val autocompleteFilter = UrlAutoCompleteFilter()
-        autocompleteFilter.load(context.applicationContext)
-        setOnFilterListener { searchText, view ->
-            autocompleteFilter.onFilter(searchText, view)
-        }
-
-        setOnUserInputListener { hasUserChangedURLSinceEditTextFocused = true }
-        setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                hasUserChangedURLSinceEditTextFocused = false
-                updateOverlayForCurrentState()
-            }
-        }
     }
 
     override fun onClick(view: View?) {
@@ -162,17 +130,8 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
             else -> R.id.navButtonForward
         }
 
-        maybeUpdateOverlayURLForCurrentState()
-
         if (findFocus() == null) {
             requestFocus()
-        }
-    }
-
-    private fun maybeUpdateOverlayURLForCurrentState() {
-        // Keep redirects reflected in the address field without replacing user input.
-        if (!hasUserChangedURLSinceEditTextFocused) {
-            navUrlInput.setText(navigationStateProvider?.getCurrentUrl())
         }
     }
 
@@ -181,7 +140,7 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
         super.setVisibility(visibility)
 
         if (visibility == View.VISIBLE) {
-            navUrlInput.requestFocus()
+            navButtonHome.requestFocus()
             updateOverlayForCurrentState()
         }
     }

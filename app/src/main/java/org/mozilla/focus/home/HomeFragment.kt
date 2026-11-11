@@ -8,23 +8,18 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
-import org.mozilla.focus.autocomplete.UrlAutoCompleteFilter
-import org.mozilla.focus.telemetry.UrlTextInputLocation
 import org.mozilla.focus.utils.OnUrlEnteredListener
-import org.mozilla.focus.widget.InlineAutocompleteEditText
 import org.mozilla.tv.firefox.R
 
 class HomeFragment : Fragment() {
@@ -33,11 +28,6 @@ class HomeFragment : Fragment() {
 
     var onSettingsPressed: (() -> Unit)? = null
 
-    val urlAutoCompleteFilter = UrlAutoCompleteFilter()
-
-    lateinit var urlBar: LinearLayout
-
-    private var input: InlineAutocompleteEditText? = null
     private var bookmarks: LinearLayout? = null
 
     override fun onAttach(context: Context) {
@@ -87,80 +77,6 @@ class HomeFragment : Fragment() {
             }
         )
 
-        urlBar = LinearLayout(context).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(22), 0, dp(22))
-        }
-
-        val editor =
-            InlineAutocompleteEditText(context, null).apply {
-                id = R.id.urlInputView
-                hint = getString(R.string.urlbar_hint)
-
-                inputType =
-                    InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_VARIATION_URI
-
-                imeOptions =
-                    EditorInfo.IME_ACTION_GO or
-                    EditorInfo.IME_FLAG_NO_EXTRACT_UI or
-                    EditorInfo.IME_FLAG_NO_FULLSCREEN
-
-                setSingleLine(true)
-                setTextColor(Color.rgb(32, 33, 36))
-                setHintTextColor(Color.DKGRAY)
-                textSize = 20f
-
-                setPadding(
-                    dp(16),
-                    dp(8),
-                    dp(16),
-                    dp(8)
-                )
-
-                background = background()
-                isFocusableInTouchMode = true
-
-                importantForAutofill =
-                    View.IMPORTANT_FOR_AUTOFILL_NO
-            }
-
-        input = editor
-
-        urlBar.addView(
-            editor,
-            LinearLayout.LayoutParams(
-                0,
-                dp(56),
-                1f
-            )
-        )
-
-        urlBar.addView(
-            Button(context).apply {
-                text = getString(R.string.tv_go)
-                isAllCaps = false
-
-                setOnClickListener {
-                    submitAddress()
-                }
-            },
-            LinearLayout.LayoutParams(
-                dp(88),
-                dp(56)
-            )
-        )
-
-        body.addView(urlBar)
-
-        editor.setOnCommitListener {
-            submitAddress()
-        }
-
-        editor.setOnFilterListener { text, view ->
-            urlAutoCompleteFilter.onFilter(text, view)
-        }
-
         body.addView(
             label(
                 context,
@@ -187,21 +103,7 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        urlAutoCompleteFilter.load(requireContext())
         refreshBookmarks()
-    }
-
-    private fun submitAddress() {
-        val editor = input ?: return
-        val value = editor.text.toString().trim()
-
-        if (value.isNotEmpty()) {
-            onUrlEnteredListener.onTextInputUrlEntered(
-                value,
-                editor.lastAutocompleteResult,
-                UrlTextInputLocation.HOME
-            )
-        }
     }
 
     private fun refreshBookmarks() {
@@ -391,7 +293,6 @@ class HomeFragment : Fragment() {
     fun dispatchKeyEvent(event: KeyEvent): Boolean = false
 
     override fun onDestroyView() {
-        input = null
         bookmarks = null
         super.onDestroyView()
     }

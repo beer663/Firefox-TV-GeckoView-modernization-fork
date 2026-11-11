@@ -19,36 +19,21 @@ import java.net.URI;
 import java.net.URISyntaxException;
 
 public class UrlUtils {
+    /** Use HTTPS for scheme-less public domains; preserve explicit schemes. */
     public static String normalize(@NonNull String input) {
-        String trimmedInput = input.trim();
-        Uri uri = Uri.parse(trimmedInput);
-
-        if (TextUtils.isEmpty(uri.getScheme())) {
-            uri = Uri.parse("http://" + trimmedInput);
-        }
-
-        return uri.toString();
+        return SmartAddress.normalize(input);
     }
 
-    /**
-     * Is the given string a URL or should we perform a search?
-     *
-     * TODO: This is a super simple and probably stupid implementation.
-     */
-    public static boolean isUrl(String url) {
-        String trimmedUrl = url.trim();
-        if (trimmedUrl.contains(" ")) {
-            return false;
-        }
-
-        return trimmedUrl.contains(".") || trimmedUrl.contains(":");
+    /** Recognize any valid host/TLD without a hard-coded country suffix list. */
+    public static boolean isUrl(String input) {
+        return SmartAddress.isAddress(input);
     }
 
     public static boolean isValidSearchQueryUrl(String url) {
         String trimmedUrl = url.trim();
         if (!trimmedUrl.matches("^.+?://.+?")) {
             // UI hint url doesn't have http scheme, so add it if necessary
-            trimmedUrl = "http://" + trimmedUrl;
+            trimmedUrl = "https://" + trimmedUrl;
         }
 
         if (!URLUtil.isNetworkUrl(trimmedUrl)) {
@@ -67,7 +52,7 @@ public class UrlUtils {
             return false;
         }
 
-        return url.startsWith("http:") || url.startsWith("https:");
+        return url.startsWith("http://") || url.startsWith("https://");
     }
 
     public static boolean isSearchQuery(String text) {
@@ -78,7 +63,11 @@ public class UrlUtils {
         final SearchEngine searchEngine = SearchEngineManager.getInstance()
                 .getDefaultSearchEngine(context);
 
-        return searchEngine.buildSearchUrl(searchTerm);
+        final String searchUrl = searchEngine == null ? null : searchEngine.buildSearchUrl(searchTerm);
+        if (TextUtils.isEmpty(searchUrl) || !isHttpOrHttps(searchUrl)) {
+            return "https://www.google.com/search?q=" + Uri.encode(searchTerm);
+        }
+        return searchUrl;
     }
 
     public static String stripUserInfo(@Nullable String url) {

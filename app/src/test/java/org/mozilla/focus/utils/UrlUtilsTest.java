@@ -97,7 +97,7 @@ public class UrlUtilsTest {
         assertEquals("https://www.mozilla.org/en-US/internet-health/", UrlUtils.normalize("https://www.mozilla.org/en-US/internet-health/"));
         assertEquals("file:///mnt/sdcard/", UrlUtils.normalize("file:///mnt/sdcard/"));
 
-        assertEquals("http://mozilla.org", UrlUtils.normalize("mozilla.org"));
+        assertEquals("https://mozilla.org", UrlUtils.normalize("mozilla.org"));
         assertEquals("http://mozilla.org", UrlUtils.normalize("http://mozilla.org "));
         assertEquals("http://mozilla.org", UrlUtils.normalize(" http://mozilla.org "));
         assertEquals("http://mozilla.org", UrlUtils.normalize(" http://mozilla.org"));

@@ -59,7 +59,7 @@ object IntentValidator {
             }
 
             val isSearch = !UrlUtils.isUrl(dataString)
-            val url = if (isSearch) UrlUtils.createSearchUrl(context, dataString) else dataString
+            val url = if (isSearch) UrlUtils.createSearchUrl(context, dataString) else UrlUtils.normalize(dataString)
             onValidBrowserIntent(url, Source.SHARE)
         }
     }

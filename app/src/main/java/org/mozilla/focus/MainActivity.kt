@@ -9,11 +9,13 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.widget.Button
+import androidx.lifecycle.Observer
 import android.widget.Toast
 import org.mozilla.focus.architecture.NonNullObserver
 import org.mozilla.focus.browser.BrowserSessionSupport
 import org.mozilla.focus.browser.cursor.RemoteKeyRouter
 import org.mozilla.focus.browser.BrowserFragment
+import org.mozilla.focus.autocomplete.UrlAutoCompleteFilter
 import org.mozilla.focus.browser.cursor.TvCursorLayout
 import org.mozilla.focus.ext.toSafeIntent
 import org.mozilla.focus.extensions.ExtensionPermissions
@@ -42,6 +44,11 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     private var pendingNavigation: Pair<String, Source>? = null
     private lateinit var cursorRoot: TvCursorLayout
     private val extensionPermissions by lazy { ExtensionPermissions(this) }
+    private lateinit var addressInput: InlineAutocompleteEditText
+    private var observedSession: Session? = null
+    private val sessionUrlObserver = Observer<String> { url ->
+        updateAddressText(url)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +63,16 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
         setContentView(R.layout.activity_main)
         cursorRoot = findViewById(R.id.rootView)
+        addressInput = findViewById(R.id.tvAddressInput)
+        val urlSuggestions = UrlAutoCompleteFilter()
+        urlSuggestions.load(applicationContext)
+        addressInput.setOnFilterListener { text, field ->
+            urlSuggestions.onFilter(text, field)
+        }
+        addressInput.setOnCommitListener { submitAddress() }
+        findViewById<Button>(R.id.tvAddressGoButton).setOnClickListener {
+            submitAddress()
+        }
 
         findViewById<Button>(R.id.tvHomeButton).setOnClickListener {
             ScreenController.showHomeScreen(supportFragmentManager, this)
@@ -100,7 +117,14 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         )
         sessionManager.sessions.observe(this, object : NonNullObserver<List<Session>>() {
             override fun onValueChanged(sessions: List<Session>) {
+                val nextSession = if (sessions.isEmpty()) null else sessionManager.currentSession
+                if (observedSession !== nextSession) {
+                    observedSession?.url?.removeObserver(sessionUrlObserver)
+                    observedSession = nextSession
+                    nextSession?.url?.observe(this@MainActivity, sessionUrlObserver)
+                }
                 if (sessions.isEmpty()) {
+                    updateAddressText("")
                     ScreenController.showHomeScreen(supportFragmentManager, this@MainActivity)
                 } else {
                     ScreenController.showBrowserScreenForCurrentSession(
@@ -167,6 +191,22 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         super.onBackPressed()
     }
 
+    private fun submitAddress() {
+        val raw = addressInput.text?.toString()?.trim().orEmpty()
+        if (raw.isEmpty()) return
+        // The same handler is used for searches, unprefixed domains and full URLs.
+        onTextInputUrlEntered(raw, addressInput.lastAutocompleteResult, UrlTextInputLocation.MENU)
+        addressInput.clearFocus()
+    }
+
+    private fun updateAddressText(url: String?) {
+        if (!::addressInput.isInitialized || addressInput.hasFocus()) return
+        val displayed = url.orEmpty()
+        if (addressInput.text?.toString() != displayed) {
+            addressInput.setText(displayed)
+        }
+    }
+
     override fun onNonTextInputUrlEntered(urlStr: String) {
         ViewUtils.hideKeyboard(findViewById(R.id.container))
         ScreenController.onUrlEnteredInner(
@@ -219,6 +259,7 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     }
 
     override fun onDestroy() {
+        observedSession?.url?.removeObserver(sessionUrlObserver)
         browserSupport.close()
         super.onDestroy()
     }
@@ -250,6 +291,11 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     private fun updateToolbar() {
         val toolbar = findViewById<View>(R.id.tvToolbar) ?: return
         val page = browser()
+        if (page?.isVisible == true) {
+            updateAddressText(page.webView?.getUrl() ?: page.url)
+        } else if (supportFragmentManager.findFragmentByTag(HomeFragment.FRAGMENT_TAG)?.isVisible == true) {
+            updateAddressText("")
+        }
         toolbar.visibility = if (page?.isVisible == true && page.isInFullscreen) {
             View.GONE
         } else View.VISIBLE
