@@ -1,5 +1,5 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. https://mozilla.org/MPL/2.0/ */
+ * License, v. 2.0. https://mozilla.org/MPL/2.0/. */
 package org.mozilla.focus
 
 import android.content.Intent
@@ -32,212 +32,105 @@ import org.mozilla.focus.utils.ViewUtils
 import org.mozilla.focus.widget.InlineAutocompleteEditText
 import org.mozilla.tv.firefox.R
 
-class MainActivity :
-    LocaleAwareAppCompatActivity(),
-    OnUrlEnteredListener {
-
-    private val sessionManager =
-        SessionManager.getInstance()
-
+class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
+    private val sessionManager = SessionManager.getInstance()
     private var fragmentsResumed = false
-    private var pendingNavigation:
-        Pair<String, Source>? = null
-
+    private var pendingNavigation: Pair<String, Source>? = null
     private lateinit var cursorRoot: TvCursorLayout
-
-    private val extensionPermissions by lazy {
-        ExtensionPermissions(this)
-    }
+    private val extensionPermissions by lazy { ExtensionPermissions(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         SentryWrapper.init(this)
 
-        val intent = SafeIntent(intent)
+        // Tracking protection (formerly Turbo) is automatic in this TV build.
+        val settings = Settings.getInstance(this)
+        if (!settings.isBlockingEnabled) settings.isBlockingEnabled = true
 
+        val safeIntent = SafeIntent(intent)
         window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
         setContentView(R.layout.activity_main)
-
         cursorRoot = findViewById(R.id.rootView)
 
-        findViewById<Button>(
-            R.id.tvHomeButton
-        ).setOnClickListener {
-            ScreenController.showHomeScreen(
-                supportFragmentManager,
-                this
-            )
+        findViewById<Button>(R.id.tvHomeButton).setOnClickListener {
+            ScreenController.showHomeScreen(supportFragmentManager, this)
+        }
+        findViewById<Button>(R.id.tvBookmarkButton).setOnClickListener { saveBookmark() }
+        findViewById<Button>(R.id.tvDownloadsButton).setOnClickListener {
+            ScreenController.showDownloadsScreen(supportFragmentManager)
+        }
+        findViewById<Button>(R.id.tvHistoryButton).setOnClickListener {
+            ScreenController.showHistoryScreen(supportFragmentManager)
+        }
+        findViewById<Button>(R.id.tvSettingsButton).setOnClickListener {
+            ScreenController.showSettingsScreen(supportFragmentManager)
+        }
+        findViewById<Button>(R.id.tvMenuButton).setOnClickListener {
+            val page = browser()?.takeIf { it.isVisible }
+            if (page != null) {
+                // Share the remote Menu handler, including fullscreen and focus handling.
+                page.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MENU))
+                page.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MENU))
+            }
         }
 
-        findViewById<Button>(
-            R.id.tvBookmarkButton
-        ).setOnClickListener {
-            saveBookmark()
-        }
-
-        findViewById<Button>(
-            R.id.tvDownloadsButton
-        ).setOnClickListener {
-            ScreenController.showDownloadsScreen(
-                supportFragmentManager
-            )
-        }
-
-        findViewById<Button>(
-            R.id.tvHistoryButton
-        ).setOnClickListener {
-            ScreenController.showHistoryScreen(
-                supportFragmentManager
-            )
-        }
-
-        findViewById<Button>(
-            R.id.tvSettingsButton
-        ).setOnClickListener {
-            ScreenController.showSettingsScreen(
-                supportFragmentManager
-            )
-        }
-
+        val pageBounds = Rect()
         cursorRoot.scrollPage = { x, y, dx, dy ->
             val page = browser()
-            val view = page?.webView as? View
-            val bounds = Rect()
-
-            if (
-                page?.isVisible == true &&
-                !page.browserOverlay.isShown &&
-                view != null &&
-                view.isShown
+            val pageView = page?.webView as? View
+            if (page?.isVisible == true && !page.browserOverlay.isShown &&
+                pageView != null && pageView.isShown
             ) {
-                view.getDrawingRect(bounds)
-
-                cursorRoot.offsetDescendantRectToMyCoords(
-                    view,
-                    bounds
-                )
-
-                if (
-                    bounds.contains(
-                        x.toInt(),
-                        y.toInt()
-                    )
-                ) {
-                    page.webView?.scrollByClamped(
-                        dx,
-                        dy
-                    )
+                pageView.getDrawingRect(pageBounds)
+                cursorRoot.offsetDescendantRectToMyCoords(pageView, pageBounds)
+                if (pageBounds.contains(x.toInt(), y.toInt())) {
+                    page.webView?.scrollByClamped(dx, dy)
                     true
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
+                } else false
+            } else false
         }
 
-        cursorRoot.viewTreeObserver
-            .addOnGlobalLayoutListener {
-                updateToolbar()
-            }
-
+        cursorRoot.viewTreeObserver.addOnGlobalLayoutListener { updateToolbar() }
         IntentValidator.validateOnCreate(
-            this,
-            intent,
-            savedInstanceState,
-            ::onValidBrowserIntent
+            this, safeIntent, savedInstanceState, ::onValidBrowserIntent
         )
-
-        sessionManager.sessions.observe(
-            this,
-            object : NonNullObserver<List<Session>>() {
-                public override fun onValueChanged(
-                    sessions: List<Session>
-                ) {
-                    if (sessions.isEmpty()) {
-                        ScreenController.showHomeScreen(
-                            supportFragmentManager,
-                            this@MainActivity
-                        )
-                    } else {
-                        ScreenController
-                            .showBrowserScreenForCurrentSession(
-                                supportFragmentManager,
-                                sessionManager
-                            )
-                    }
-
-                    if (
-                        Settings.getInstance(
-                            this@MainActivity
-                        ).shouldShowOnboarding()
-                    ) {
-                        startActivity(
-                            Intent(
-                                this@MainActivity,
-                                OnboardingActivity::class.java
-                            )
-                        )
-                    }
+        sessionManager.sessions.observe(this, object : NonNullObserver<List<Session>>() {
+            override fun onValueChanged(sessions: List<Session>) {
+                if (sessions.isEmpty()) {
+                    ScreenController.showHomeScreen(supportFragmentManager, this@MainActivity)
+                } else {
+                    ScreenController.showBrowserScreenForCurrentSession(
+                        supportFragmentManager, sessionManager
+                    )
                 }
             }
-        )
-
+        })
         WebViewProvider.preload(this)
     }
 
     override fun onNewIntent(unsafeIntent: Intent) {
         super.onNewIntent(unsafeIntent)
-
-        IntentValidator.validate(
-            this,
-            unsafeIntent.toSafeIntent(),
-            ::onValidBrowserIntent
-        )
+        IntentValidator.validate(this, unsafeIntent.toSafeIntent(), ::onValidBrowserIntent)
     }
 
-    private fun onValidBrowserIntent(
-        url: String,
-        source: Source
-    ) {
-        if (
-            !fragmentsResumed ||
-            supportFragmentManager.isStateSaved
-        ) {
+    private fun onValidBrowserIntent(url: String, source: Source) {
+        if (!fragmentsResumed || supportFragmentManager.isStateSaved) {
             pendingNavigation = url to source
             return
         }
-
         pendingNavigation = null
-
-        ScreenController.showBrowserScreenForUrl(
-            supportFragmentManager,
-            url,
-            source
-        )
+        ScreenController.showBrowserScreenForUrl(supportFragmentManager, url, source)
     }
 
     override fun onResumeFragments() {
         super.onResumeFragments()
         fragmentsResumed = true
-
-        if (
-            supportFragmentManager.isStateSaved
-        ) return
-
-        val navigation =
-            pendingNavigation ?: return
-
+        if (supportFragmentManager.isStateSaved) return
+        val navigation = pendingNavigation ?: return
         pendingNavigation = null
-
         ScreenController.showBrowserScreenForUrl(
-            supportFragmentManager,
-            navigation.first,
-            navigation.second
+            supportFragmentManager, navigation.first, navigation.second
         )
     }
 
@@ -253,11 +146,7 @@ class MainActivity :
 
     override fun onPause() {
         extensionPermissions.detach()
-
-        if (::cursorRoot.isInitialized) {
-            cursorRoot.pausePointer()
-        }
-
+        if (::cursorRoot.isInitialized) cursorRoot.pausePointer()
         fragmentsResumed = false
         super.onPause()
         TelemetryWrapper.stopSession(this)
@@ -270,181 +159,84 @@ class MainActivity :
 
     override fun onBackPressed() {
         val page = browser()
-
-        if (
-            page != null &&
-            page.isVisible &&
-            page.onBackPressed()
-        ) {
-            return
-        }
-
+        if (page != null && page.isVisible && page.onBackPressed()) return
         super.onBackPressed()
     }
 
-    override fun onNonTextInputUrlEntered(
-        urlStr: String
-    ) {
-        ViewUtils.hideKeyboard(
-            findViewById(R.id.container)
-        )
-
+    override fun onNonTextInputUrlEntered(urlStr: String) {
+        ViewUtils.hideKeyboard(findViewById(R.id.container))
         ScreenController.onUrlEnteredInner(
-            this,
-            supportFragmentManager,
-            urlStr,
-            false,
-            null,
-            null
+            this, supportFragmentManager, urlStr, false, null, null
         )
     }
 
     override fun onTextInputUrlEntered(
         urlStr: String,
-        autocompleteResult:
-            InlineAutocompleteEditText.AutocompleteResult?,
+        autocompleteResult: InlineAutocompleteEditText.AutocompleteResult?,
         inputLocation: UrlTextInputLocation?
     ) {
-        ViewUtils.hideKeyboard(
-            findViewById(R.id.container)
-        )
-
+        ViewUtils.hideKeyboard(findViewById(R.id.container))
         ScreenController.onUrlEnteredInner(
-            this,
-            supportFragmentManager,
-            urlStr,
-            true,
-            autocompleteResult,
-            inputLocation
+            this, supportFragmentManager, urlStr, true, autocompleteResult, inputLocation
         )
     }
 
-    override fun dispatchKeyEvent(
-        event: KeyEvent
-    ): Boolean {
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (::cursorRoot.isInitialized) {
-            if (
-                cursorRoot.handleRemoteKey(event)
-            ) {
-                return true
-            }
-
-            if (
-                cursorRoot.keyboardVisible()
-            ) {
-                return super.dispatchKeyEvent(event)
-            }
+            if (cursorRoot.handleRemoteKey(event)) return true
+            if (cursorRoot.keyboardVisible()) return super.dispatchKeyEvent(event)
         }
-
         val page = browser()
-
-        val home =
-            supportFragmentManager.findFragmentByTag(
-                HomeFragment.FRAGMENT_TAG
-            ) as? HomeFragment
-
-        return if (
-            page != null && page.isVisible
-        ) {
-            page.dispatchKeyEvent(event) ||
-                super.dispatchKeyEvent(event)
-        } else if (
-            home != null && home.isVisible
-        ) {
-            home.dispatchKeyEvent(event) ||
-                super.dispatchKeyEvent(event)
-        } else {
-            super.dispatchKeyEvent(event)
+        val home = supportFragmentManager.findFragmentByTag(
+            HomeFragment.FRAGMENT_TAG
+        ) as? HomeFragment
+        return when {
+            page != null && page.isVisible ->
+                page.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
+            home != null && home.isVisible ->
+                home.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
+            else -> super.dispatchKeyEvent(event)
         }
     }
 
-    private fun browser() =
-        supportFragmentManager.findFragmentByTag(
-            BrowserFragment.FRAGMENT_TAG
-        ) as? BrowserFragment
+    private fun browser() = supportFragmentManager.findFragmentByTag(
+        BrowserFragment.FRAGMENT_TAG
+    ) as? BrowserFragment
 
     private fun bookmarkUrl(): String? {
-        val page = browser()?.takeIf {
-            it.isVisible
-        } ?: return null
-
-        val url =
-            page.webView?.getUrl() ?:
-            page.url ?:
-            return null
-
+        val page = browser()?.takeIf { it.isVisible } ?: return null
+        val url = page.webView?.getUrl() ?: page.url ?: return null
         val scheme = Uri.parse(url).scheme
-
-        return url.takeIf {
-            scheme == "https" || scheme == "http"
-        }
+        return url.takeIf { scheme == "https" || scheme == "http" }
     }
 
     private fun saveBookmark() {
         val url = bookmarkUrl() ?: return
-
-        val manager =
-            CustomTilesManager.getInstance(this)
-
-        val message = if (
-            manager.isURLPinned(url)
-        ) {
+        val manager = CustomTilesManager.getInstance(this)
+        val message = if (manager.isURLPinned(url)) {
             R.string.tv_bookmark_exists
         } else {
             manager.pinSite(this, url, null)
             R.string.tv_bookmark_saved
         }
-
-        Toast.makeText(
-            this,
-            message,
-            Toast.LENGTH_SHORT
-        ).show()
-
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         updateToolbar()
     }
 
     private fun updateToolbar() {
-        val toolbar =
-            findViewById<View>(
-                R.id.tvToolbar
-            ) ?: return
-
+        val toolbar = findViewById<View>(R.id.tvToolbar) ?: return
         val page = browser()
+        toolbar.visibility = if (page?.isVisible == true && page.isInFullscreen) {
+            View.GONE
+        } else View.VISIBLE
+        findViewById<Button>(R.id.tvMenuButton).isEnabled = page?.isVisible == true
 
-        toolbar.visibility =
-            if (
-                page?.isVisible == true &&
-                page.isInFullscreen
-            ) {
-                View.GONE
-            } else {
-                View.VISIBLE
-            }
-
-        val button =
-            findViewById<Button>(
-                R.id.tvBookmarkButton
-            )
-
+        val button = findViewById<Button>(R.id.tvBookmarkButton)
         val url = bookmarkUrl()
         button.isEnabled = url != null
-
-        val label = if (
-            url != null &&
-            CustomTilesManager
-                .getInstance(this)
-                .isURLPinned(url)
-        ) {
+        val label = if (url != null && CustomTilesManager.getInstance(this).isURLPinned(url)) {
             getString(R.string.tv_bookmarked)
-        } else {
-            getString(R.string.tv_bookmark)
-        }
-
-        if (
-            button.text.toString() != label
-        ) {
-            button.text = label
-        }
+        } else getString(R.string.tv_bookmark)
+        if (button.text.toString() != label) button.text = label
     }
 }
