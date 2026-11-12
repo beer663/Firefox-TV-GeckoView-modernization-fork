@@ -73,6 +73,45 @@ public final class WebViewProvider {
 
     private WebViewProvider() {}
 
+    // GeckoView 159 provides structured network errors; keep the reason
+    // visible instead of treating every failure as a bad URL.
+    private static String explainLoadError(WebRequestError error) {
+        switch (error.code) {
+            case WebRequestError.ERROR_UNKNOWN_HOST:
+                return "DNS could not find this website";
+            case WebRequestError.ERROR_OFFLINE:
+                return "Device is offline";
+            case WebRequestError.ERROR_NET_TIMEOUT:
+                return "Connection timed out";
+            case WebRequestError.ERROR_CONNECTION_REFUSED:
+                return "Server refused the connection";
+            case WebRequestError.ERROR_NET_RESET:
+                return "Connection was reset";
+            case WebRequestError.ERROR_SECURITY_BAD_CERT:
+                return "HTTPS certificate is not trusted";
+            case WebRequestError.ERROR_SECURITY_SSL:
+                return "Secure HTTPS connection failed";
+            case WebRequestError.ERROR_MALFORMED_URI:
+                return "Website address is malformed";
+            case WebRequestError.ERROR_UNKNOWN_PROTOCOL:
+                return "Unsupported URL protocol";
+            case WebRequestError.ERROR_CONTENT_CRASHED:
+                return "Browser content process crashed";
+            default:
+                if (error.category == WebRequestError.ERROR_CATEGORY_SECURITY) {
+                    return "HTTPS security problem";
+                }
+                if (error.category == WebRequestError.ERROR_CATEGORY_NETWORK) {
+                    return "Network connection problem";
+                }
+                if (error.category == WebRequestError.ERROR_CATEGORY_URI) {
+                    return "Website address problem";
+                }
+                return "GeckoView request failed";
+        }
+    }
+
+
     private static synchronized GeckoRuntime runtime(
             Context context) {
 
@@ -559,6 +598,8 @@ public final class WebViewProvider {
                                 @NonNull GeckoSession session,
                                 @NonNull String url) {
 
+                            Log.i(TAG, "GECKO_PAGE_START host="
+                                    + Uri.parse(url).getHost());
                             currentUrl = url;
                             title = "";
                             documentLoaded = false;
@@ -579,6 +620,7 @@ public final class WebViewProvider {
                                 @NonNull GeckoSession session,
                                 boolean success) {
 
+                            Log.i(TAG, "GECKO_PAGE_STOP success=" + success);
                             if (callback != null) {
                                 callback.onProgress(100);
                                 callback.onPageFinished(
@@ -731,11 +773,38 @@ public final class WebViewProvider {
                                             ? currentUrl
                                             : url;
 
+                            // Keep the real GeckoView error visible. The old generic
+                            // screen hid whether this was DNS, TLS, offline, or a crash.
+                            final String explanation = explainLoadError(error);
+                            Log.e(TAG, "GECKO_LOAD_FAILED host="
+                                    + Uri.parse(address).getHost()
+                                    + " scheme=" + Uri.parse(address).getScheme()
+                                    + " category=" + error.category
+                                    + " code=" + error.code
+                                    + " reason=" + explanation);
+
+                            Toast.makeText(
+                                    getContext(),
+                                    "Cannot open page: " + explanation
+                                            + " (" + error.category + "/" + error.code + ")",
+                                    Toast.LENGTH_LONG).show();
+
                             String html =
-                                    "<!doctype html><meta name='viewport' content='width=device-width'><title>Page could not load</title>"
-                                            + "<body style='font:22px sans-serif;background:#181920;color:white;padding:36px'><h1>Page could not load</h1><p>"
+                                    "<!doctype html><html><head>"
+                                            + "<meta name='viewport' content='width=device-width'>"
+                                            + "<title>Connection failed</title></head>"
+                                            + "<body style='font:21px sans-serif;background:#181920;"
+                                            + "color:white;padding:32px;overflow-wrap:anywhere'>"
+                                            + "<h1>Cannot open website</h1><p>"
                                             + Html.escapeHtml(address)
-                                            + "</p><p>Check your connection, or return Home and try another address.</p>";
+                                            + "</p><h2>" + Html.escapeHtml(explanation) + "</h2>"
+                                            + "<p>GeckoView category: " + error.category
+                                            + " &nbsp; error code: " + error.code + "</p>"
+                                            + "<p>Try https://example.com. If that also fails, "
+                                            + "check the TV's internet connection, date/time and DNS. "
+                                            + "Do not bypass a certificate warning.</p>"
+                                            + "<p>Tell the developer the category and error code shown above.</p>"
+                                            + "</body></html>";
 
                             return GeckoResult.fromValue(
                                     "data:text/html;charset=utf-8;base64,"
@@ -765,6 +834,22 @@ public final class WebViewProvider {
 
             geckoSession.setContentDelegate(
                     new GeckoSession.ContentDelegate() {
+                        @Override
+                        public void onCrash(@NonNull GeckoSession session) {
+                            Log.e(TAG, "GECKO_CONTENT_CRASHED");
+                            Toast.makeText(getContext(),
+                                    "GeckoView content process crashed. Please report this.",
+                                    Toast.LENGTH_LONG).show();
+                        }
+
+                        @Override
+                        public void onKill(@NonNull GeckoSession session) {
+                            Log.e(TAG, "GECKO_CONTENT_KILLED");
+                            Toast.makeText(getContext(),
+                                    "GeckoView content process was killed. Please report this.",
+                                    Toast.LENGTH_LONG).show();
+                        }
+
                         @Override
                         public void onTitleChange(
                                 @NonNull GeckoSession session,
@@ -1043,6 +1128,8 @@ public final class WebViewProvider {
 
             currentUrl = url;
 
+            Log.i(TAG, "GECKO_LOAD_REQUEST host=" + Uri.parse(url).getHost()
+                    + " scheme=" + Uri.parse(url).getScheme());
             navigate(
                     () -> geckoSession.loadUri(
                             url));

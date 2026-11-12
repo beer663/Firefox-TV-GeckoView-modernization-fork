@@ -19,92 +19,132 @@
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
 
+            <!-- Address/search on top. Its width tracks the toolbar button row below. -->
             <LinearLayout
+                android:id="@+id/tvAddressRow"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
+                android:background="@drawable/tv_omnibox_inset_background"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/tvHomeButton"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:text="@string/tv_home"
-                android:textAllCaps="false" />
-
-            <Button
-                android:id="@+id/tvBookmarkButton"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:text="@string/tv_bookmark"
-                android:textAllCaps="false" />
-
-            <Button
-                android:id="@+id/tvMenuButton"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:text="@string/tv_menu"
-                android:textAllCaps="false" />
-
-            <Button
-                android:id="@+id/tvDownloadsButton"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:text="@string/tv_downloads"
-                android:textAllCaps="false" />
-
-            <Button
-                android:id="@+id/tvHistoryButton"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:text="@string/tv_history"
-                android:textAllCaps="false" />
-
-            <Button
-                android:id="@+id/tvSettingsButton"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:text="@string/menu_settings"
-                android:textAllCaps="false" />
-            </LinearLayout>
-
-            <!-- One omnibox on the persistent toolbar, including the home screen. -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingTop="4dp"
-                android:paddingBottom="10dp">
 
                 <org.mozilla.focus.widget.InlineAutocompleteEditText
                     android:id="@+id/tvAddressInput"
                     android:layout_width="0dp"
-                    android:layout_height="52dp"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@drawable/tv_omnibox_background"
+                    android:background="@android:color/transparent"
                     android:drawableStart="@drawable/ic_search"
-                    android:drawablePadding="12dp"
+                    android:drawablePadding="8dp"
                     android:gravity="center_vertical"
                     android:hint="@string/tv_address_search_hint"
                     android:imeOptions="actionGo|flagNoExtractUi|flagNoFullscreen"
                     android:importantForAutofill="no"
                     android:inputType="textUri"
-                    android:paddingStart="16dp"
-                    android:paddingEnd="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="8dp"
                     android:selectAllOnFocus="true"
                     android:singleLine="true"
                     android:textColor="#FFFFFF"
                     android:textColorHint="#BCC5D2"
-                    android:textSize="18sp" />
+                    android:textSize="16sp" />
 
                 <Button
                     android:id="@+id/tvAddressGoButton"
-                    android:layout_width="88dp"
-                    android:layout_height="52dp"
-                    android:layout_marginStart="10dp"
+                    android:layout_width="68dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="2dp"
+                    android:layout_marginEnd="2dp"
+                    android:background="@drawable/tv_omnibox_go_background"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
                     android:text="@string/tv_go"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp" />
+            </LinearLayout>
+
+            <!-- Home, Bookmark, Downloads, History, Settings, then Back/Forward/Refresh. -->
+            <LinearLayout
+                android:id="@+id/tvToolbarButtonRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/tvHomeButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:text="@string/tv_home"
                     android:textAllCaps="false" />
+
+                <Button
+                    android:id="@+id/tvBookmarkButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:text="@string/tv_bookmark"
+                    android:textAllCaps="false" />
+
+                <Button
+                    android:id="@+id/tvDownloadsButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:text="@string/tv_downloads"
+                    android:textAllCaps="false" />
+
+                <Button
+                    android:id="@+id/tvHistoryButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:text="@string/tv_history"
+                    android:textAllCaps="false" />
+
+                <Button
+                    android:id="@+id/tvSettingsButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:text="@string/menu_settings"
+                    android:textAllCaps="false" />
+
+                <ImageButton
+                    android:id="@+id/tvBackButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/tv_toolbar_icon_background"
+                    android:contentDescription="@string/tv_back"
+                    android:src="@drawable/ic_back"
+                    android:scaleType="centerInside"
+                    android:padding="12dp"
+                    android:tint="@color/tv_toolbar_icon_tint" />
+
+                <ImageButton
+                    android:id="@+id/tvForwardButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/tv_toolbar_icon_background"
+                    android:contentDescription="@string/tv_forward"
+                    android:src="@drawable/ic_forward"
+                    android:scaleType="centerInside"
+                    android:padding="12dp"
+                    android:tint="@color/tv_toolbar_icon_tint" />
+
+                <ImageButton
+                    android:id="@+id/tvRefreshButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/tv_toolbar_icon_background"
+                    android:contentDescription="@string/tv_refresh"
+                    android:src="@drawable/ic_refresh"
+                    android:scaleType="centerInside"
+                    android:padding="12dp"
+                    android:tint="@color/tv_toolbar_icon_tint" />
             </LinearLayout>
         </LinearLayout>
 

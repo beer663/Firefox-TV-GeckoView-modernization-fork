@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.widget.Button
+import android.widget.ImageButton
 import androidx.lifecycle.Observer
 import android.widget.Toast
 import org.mozilla.focus.architecture.NonNullObserver
@@ -48,6 +49,7 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     private var observedSession: Session? = null
     private val sessionUrlObserver = Observer<String> { url ->
         updateAddressText(url)
+        updateToolbar()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,6 +75,16 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         findViewById<Button>(R.id.tvAddressGoButton).setOnClickListener {
             submitAddress()
         }
+        // Align the integrated search bar with the right edge of Refresh.
+        // The bookmark label can change, so recompute if the button row resizes.
+        val toolbarButtons = findViewById<View>(R.id.tvToolbarButtonRow)
+        val addressRow = findViewById<View>(R.id.tvAddressRow)
+        toolbarButtons.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+            val width = right - left
+            if (width > 0 && addressRow.layoutParams.width != width) {
+                addressRow.layoutParams = addressRow.layoutParams.apply { this.width = width }
+            }
+        }
 
         findViewById<Button>(R.id.tvHomeButton).setOnClickListener {
             ScreenController.showHomeScreen(supportFragmentManager, this)
@@ -87,12 +99,19 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         findViewById<Button>(R.id.tvSettingsButton).setOnClickListener {
             ScreenController.showSettingsScreen(supportFragmentManager)
         }
-        findViewById<Button>(R.id.tvMenuButton).setOnClickListener {
-            val page = browser()?.takeIf { it.isVisible }
-            if (page != null) {
-                page.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MENU))
-                page.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MENU))
-            }
+        // Browser history controls live in the persistent toolbar, not a second menu.
+        findViewById<ImageButton>(R.id.tvBackButton).setOnClickListener {
+            val web = browser()?.takeIf { it.isVisible && !it.isInFullscreen }?.webView
+            if (web?.canGoBack() == true) web.goBack()
+            updateToolbar()
+        }
+        findViewById<ImageButton>(R.id.tvForwardButton).setOnClickListener {
+            val web = browser()?.takeIf { it.isVisible && !it.isInFullscreen }?.webView
+            if (web?.canGoForward() == true) web.goForward()
+            updateToolbar()
+        }
+        findViewById<ImageButton>(R.id.tvRefreshButton).setOnClickListener {
+            browser()?.takeIf { it.isVisible && !it.isInFullscreen }?.webView?.reload()
         }
 
         val pageBounds = Rect()
@@ -299,7 +318,10 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         toolbar.visibility = if (page?.isVisible == true && page.isInFullscreen) {
             View.GONE
         } else View.VISIBLE
-        findViewById<Button>(R.id.tvMenuButton).isEnabled = page?.isVisible == true
+        val activeWeb = page?.takeIf { it.isVisible && !it.isInFullscreen }?.webView
+        findViewById<ImageButton>(R.id.tvBackButton).isEnabled = activeWeb?.canGoBack() == true
+        findViewById<ImageButton>(R.id.tvForwardButton).isEnabled = activeWeb?.canGoForward() == true
+        findViewById<ImageButton>(R.id.tvRefreshButton).isEnabled = activeWeb != null
 
         if (page?.isVisible == true && !page.browserOverlay.isShown &&
             (if (page.isInFullscreen) !page.isFullscreenPointerEnabled

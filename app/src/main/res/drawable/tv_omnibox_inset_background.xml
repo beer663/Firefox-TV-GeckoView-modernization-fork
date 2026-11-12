@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Match AppCompat Button's visual top/bottom inset while keeping a 48dp touch row. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/tv_omnibox_background"
+    android:insetTop="4dp"
+    android:insetBottom="4dp" />

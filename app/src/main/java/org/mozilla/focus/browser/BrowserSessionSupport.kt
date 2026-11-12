@@ -85,6 +85,14 @@ class BrowserSessionSupport(
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             // Preserve the adapter's existing callbacks explicitly.
+            override fun onCrash(session: GeckoSession) {
+                original.onCrash(session)
+            }
+
+            override fun onKill(session: GeckoSession) {
+                original.onKill(session)
+            }
+
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 original.onTitleChange(session, title)
             }

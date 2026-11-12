@@ -19,9 +19,6 @@ import org.mozilla.focus.telemetry.TelemetryWrapper
 import org.mozilla.focus.utils.Settings
 import org.mozilla.focus.widget.InlineAutocompleteEditText
 
-private const val NAVIGATION_BUTTON_ENABLED_ALPHA = 1.0f
-private const val NAVIGATION_BUTTON_DISABLED_ALPHA = 0.3f
-
 enum class NavigationEvent {
     HOME, SETTINGS, BACK, FORWARD, RELOAD, LOAD, TURBO, PIN_ACTION;
 
@@ -59,9 +56,6 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
     /** Called inside [setVisibility] right before super.setVisibility is called. */
     var onPreSetVisibilityListener: ((isVisible: Boolean) -> Unit)? = null
 
-    private val navButtonBack: ImageButton by lazy { findViewById(R.id.navButtonBack) }
-    private val navButtonForward: ImageButton by lazy { findViewById(R.id.navButtonForward) }
-    private val navButtonReload: ImageButton by lazy { findViewById(R.id.navButtonReload) }
     private val navButtonHome: ImageButton by lazy { findViewById(R.id.navButtonHome) }
     private val navButtonSettings: ImageButton by lazy { findViewById(R.id.navButtonSettings) }
     private val pinButton: CheckableImageButton by lazy { findViewById(R.id.pinButton) }
@@ -70,8 +64,7 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
         LayoutInflater.from(context)
                 .inflate(R.layout.browser_overlay, this, true)
 
-        listOf(navButtonBack, navButtonForward, navButtonReload, navButtonHome, navButtonSettings,
-                pinButton)
+        listOf(navButtonHome, navButtonSettings, pinButton)
                 .forEach {
                     it.setOnClickListener(this)
                 }
@@ -104,34 +97,10 @@ class BrowserNavigationOverlay @JvmOverloads constructor(
     }
 
     fun updateOverlayForCurrentState() {
-        val canGoBack = navigationStateProvider?.isBackEnabled() ?: false
-        navButtonBack.isEnabled = canGoBack
-        navButtonBack.isFocusable = canGoBack
-        navButtonBack.alpha =
-            if (canGoBack) NAVIGATION_BUTTON_ENABLED_ALPHA
-            else NAVIGATION_BUTTON_DISABLED_ALPHA
-
-        val canGoForward = navigationStateProvider?.isForwardEnabled() ?: false
-        navButtonForward.isEnabled = canGoForward
-        navButtonForward.isFocusable = canGoForward
-        navButtonForward.alpha =
-            if (canGoForward) NAVIGATION_BUTTON_ENABLED_ALPHA
-            else NAVIGATION_BUTTON_DISABLED_ALPHA
-
+        // Back, Forward and Refresh were moved to MainActivity's toolbar.
         pinButton.isChecked = navigationStateProvider?.isURLPinned() ?: false
-
-        navButtonReload.nextFocusLeftId = when {
-            canGoForward -> R.id.navButtonForward
-            canGoBack -> R.id.navButtonBack
-            else -> R.id.navButtonReload
-        }
-        navButtonForward.nextFocusLeftId = when {
-            canGoBack -> R.id.navButtonBack
-            else -> R.id.navButtonForward
-        }
-
         if (findFocus() == null) {
-            requestFocus()
+            navButtonHome.requestFocus()
         }
     }
 
