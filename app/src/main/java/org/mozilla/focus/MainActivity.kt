@@ -4,6 +4,8 @@ package org.mozilla.focus
 
 import android.content.Intent
 import android.graphics.Rect
+import android.text.Editable
+import android.text.TextWatcher
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
@@ -33,6 +35,8 @@ import org.mozilla.focus.telemetry.UrlTextInputLocation
 import org.mozilla.focus.utils.OnUrlEnteredListener
 import org.mozilla.focus.utils.SafeIntent
 import org.mozilla.focus.utils.Settings
+import org.mozilla.focus.utils.SmartAddress
+import org.mozilla.focus.utils.UrlUtils
 import org.mozilla.focus.utils.ViewUtils
 import org.mozilla.focus.widget.InlineAutocompleteEditText
 import org.mozilla.tv.firefox.R
@@ -46,6 +50,10 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     private lateinit var cursorRoot: TvCursorLayout
     private val extensionPermissions by lazy { ExtensionPermissions(this) }
     private lateinit var addressInput: InlineAutocompleteEditText
+    // Keep TV keyboard input stable when focus moves from the field to the Go button.
+    // Otherwise updateToolbar() can replace the typed address with the old page URL.
+    private var pendingTypedAddress: String? = null
+    private var settingAddressFromPage = false
     private var observedSession: Session? = null
     private val sessionUrlObserver = Observer<String> { url ->
         updateAddressText(url)
@@ -66,6 +74,21 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         setContentView(R.layout.activity_main)
         cursorRoot = findViewById(R.id.rootView)
         addressInput = findViewById(R.id.tvAddressInput)
+        addressInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(
+                s: CharSequence?, start: Int, count: Int, after: Int
+            ) = Unit
+
+            override fun onTextChanged(
+                s: CharSequence?, start: Int, before: Int, count: Int
+            ) {
+                if (!settingAddressFromPage && addressInput.hasFocus()) {
+                    pendingTypedAddress = s?.toString().orEmpty()
+                }
+            }
+
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
         val urlSuggestions = UrlAutoCompleteFilter()
         urlSuggestions.load(applicationContext)
         addressInput.setOnFilterListener { text, field ->
@@ -161,6 +184,9 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     }
 
     private fun onValidBrowserIntent(url: String, source: Source) {
+        // External VIEW intents (including Browse Add-ons) and the Go button
+        // must both clear stale input once navigation has been accepted.
+        pendingTypedAddress = null
         if (!fragmentsResumed || supportFragmentManager.isStateSaved) {
             pendingNavigation = url to source
             return
@@ -211,18 +237,36 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
     }
 
     private fun submitAddress() {
-        val raw = addressInput.text?.toString()?.trim().orEmpty()
+        // The URL must be captured before Go moves focus or the TV keyboard hides.
+        val raw = (pendingTypedAddress ?: addressInput.text?.toString())
+            .orEmpty().trim()
         if (raw.isEmpty()) return
-        // The same handler is used for searches, unprefixed domains and full URLs.
-        onTextInputUrlEntered(raw, addressInput.lastAutocompleteResult, UrlTextInputLocation.MENU)
+
+        val destination = if (SmartAddress.isAddress(raw)) {
+            SmartAddress.normalize(raw) // Public domains default to HTTPS.
+        } else {
+            UrlUtils.createSearchUrl(this, raw)
+        }
+
+        // Use the exact navigation entry point that Browse Add-ons uses,
+        // instead of going through the old Firefox TV text-entry controller.
+        pendingTypedAddress = null
+        ViewUtils.hideKeyboard(findViewById(R.id.container))
+        onValidBrowserIntent(destination, Source.USER_ENTERED)
         addressInput.clearFocus()
     }
 
     private fun updateAddressText(url: String?) {
-        if (!::addressInput.isInitialized || addressInput.hasFocus()) return
+        if (!::addressInput.isInitialized || addressInput.hasFocus() ||
+            pendingTypedAddress != null) return
         val displayed = url.orEmpty()
         if (addressInput.text?.toString() != displayed) {
-            addressInput.setText(displayed)
+            settingAddressFromPage = true
+            try {
+                addressInput.setText(displayed)
+            } finally {
+                settingAddressFromPage = false
+            }
         }
     }
 
