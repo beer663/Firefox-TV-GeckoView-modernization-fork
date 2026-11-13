@@ -48,10 +48,10 @@ jobs:
           version_code=$((1000 + GITHUB_RUN_NUMBER))
           bash ./gradlew :app:assembleGeckoDebug \
             -PtvVersionCode="$version_code" \
-            -PtvVersionName="4.8.$GITHUB_RUN_NUMBER" \
+            -PtvVersionName="5.0.$GITHUB_RUN_NUMBER" \
             --stacktrace
 
-      - name: Prepare and verify ARMv7 APK
+      - name: Prepare and verify ARM APK
         shell: bash
         run: |
           mkdir -p release-files
@@ -73,33 +73,32 @@ jobs:
                   if name.startswith('lib/') and name.endswith('.so')
               }
 
-          if abis != {'armeabi-v7a'}:
+          if abis != {'armeabi-v7a', 'arm64-v8a'}:
               raise SystemExit(
-                  f'Expected ARMv7 only, found: {sorted(abis)}. '
-                  'Set abiFilters to armeabi-v7a in app/build.gradle.'
+                  f'Expected ARMv7 and ARM64, found: {sorted(abis)}. '
+                  'Check the default ABI list in app/build.gradle.'
               )
 
           shutil.copyfile(
               apks[0],
-              'release-files/Moms-Firefox-TV-ARMv7-debug.apk'
+              'release-files/Moms-Firefox-TV-ARM-debug.apk'
           )
 
-          print('Verified ARMv7-only APK.')
+          print('Verified ARMv7 and ARM64 APK.')
           PY
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify release-files/Moms-Firefox-TV-ARMv7-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify release-files/Moms-Firefox-TV-ARM-debug.apk
 
       - name: Publish APK to GitHub Releases
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: tv-armv7-${{ github.run_number }}-${{ github.run_attempt }}
+          RELEASE_TAG: tv-gecko-${{ github.run_number }}-${{ github.run_attempt }}
         run: |
           gh release create "$RELEASE_TAG" \
-            release-files/Moms-Firefox-TV-ARMv7-debug.apk \
+            release-files/Moms-Firefox-TV-ARM-debug.apk \
             --target "$GITHUB_SHA" \
-            --title "Mom's Firefox TV ARMv7 - Build $GITHUB_RUN_NUMBER" \
-            --notes "ARMv7 debug APK using Android automatic debug signing. Package: org.mozilla.tv.firefox.debug. A new GitHub runner may use a different debug certificate: uninstall the previous test build if Android reports an update/signature conflict." \
+            --title "Mom's Firefox TV - Build $GITHUB_RUN_NUMBER" \
+            --notes "ARMv7 and ARM64 debug APK using Android automatic debug signing. Package: org.mozilla.tv.firefox.debug. A new GitHub runner may use a different debug certificate: uninstall the previous test build if Android reports an update/signature conflict." \
             --prerelease
-
