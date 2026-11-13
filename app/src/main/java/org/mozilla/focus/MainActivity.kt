@@ -3,12 +3,15 @@
 package org.mozilla.focus
 
 import android.content.Intent
+import android.content.Context
 import android.graphics.Rect
 import android.text.Editable
 import android.text.TextWatcher
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.inputmethod.InputMethodManager
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
@@ -74,6 +77,17 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         setContentView(R.layout.activity_main)
         cursorRoot = findViewById(R.id.rootView)
         addressInput = findViewById(R.id.tvAddressInput)
+        // This is a TV cursor-controlled field. A synthetic pointer tap may focus
+        // it without ever showing the on-screen keyboard on Android TV.
+        // Only open the keyboard after a deliberate tap/click; do not pop it at launch.
+        addressInput.setOnClickListener { showAddressKeyboard() }
+        addressInput.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_UP) {
+                // Run after the EditText handles the tap and positions its cursor.
+                addressInput.post { showAddressKeyboard() }
+            }
+            false
+        }
         addressInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
                 s: CharSequence?, start: Int, count: Int, after: Int
@@ -234,6 +248,18 @@ class MainActivity : LocaleAwareAppCompatActivity(), OnUrlEnteredListener {
         val page = browser()
         if (page != null && page.isVisible && page.onBackPressed()) return
         super.onBackPressed()
+    }
+
+    private fun showAddressKeyboard() {
+        if (!addressInput.isAttachedToWindow || isFinishing) return
+        if (!addressInput.hasFocus() && !addressInput.requestFocus()) return
+        addressInput.post {
+            if (!addressInput.isAttachedToWindow || !addressInput.hasFocus() || isFinishing) {
+                return@post
+            }
+            val keyboard = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            keyboard?.showSoftInput(addressInput, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun submitAddress() {
