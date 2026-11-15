@@ -35,38 +35,67 @@ class BrowserApp : Application() {
         @JvmStatic
         fun getRuntime(context: Context): GeckoRuntime {
             check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
-            return runtime ?: GeckoRuntime.create(context.applicationContext,
+            return runtime ?: GeckoRuntime.create(
+                context.applicationContext,
                 GeckoRuntimeSettings.Builder()
                     .extensionsWebAPIEnabled(true)
-                    .build()).also { runtime = it }
+                    .crashHandler(NativeCrashService::class.java)
+                    .build()
+            ).also { runtime = it }
         }
 
         /** Only called from the manually opened diagnostics screen, on a worker. */
         fun crashReport(context: Context): String = buildString {
-            append("Saved Java crash:\n")
+            append("Native crash recorder: enabled\n\nSaved native Gecko crash:\n")
+            val native = File(context.filesDir, "last-native-crash.txt")
+            append(
+                if (native.isFile) native.readText().take(24000)
+                else "None recorded.\n"
+            )
+
+            append("\nSaved Java crash:\n")
             val saved = File(context.filesDir, "last-browser-crash.txt")
-            append(if (saved.isFile) saved.readText().take(24000) else "None recorded.\n")
+            append(
+                if (saved.isFile) saved.readText().take(24000)
+                else "None recorded.\n"
+            )
+
             if (Build.VERSION.SDK_INT >= 30) {
                 append("\nRecent Android process exits:\n")
                 try {
                     val manager = context.getSystemService(ActivityManager::class.java)
                     manager.getHistoricalProcessExitReasons(context.packageName, 0, 6)
-                        .forEach { append("${it.processName}: reason=${it.reason} " +
-                            "status=${it.status} ${it.description}\n") }
-                } catch (error: Exception) { append(error.message).append('\n') }
+                        .forEach {
+                            append(
+                                "${it.processName}: reason=${it.reason} " +
+                                    "status=${it.status} ${it.description}\n"
+                            )
+                        }
+                } catch (error: Exception) {
+                    append(error.message).append('\n')
+                }
+            } else {
+                append("\nAndroid process exit history requires Android 11 or later.\n")
             }
+
             append("\nRecent browser logs:\n")
             var logFile: File? = null
             try {
                 val file = File.createTempFile("browser-log-", ".txt", context.cacheDir)
                 logFile = file
-                val process = ProcessBuilder("logcat", "-d", "-t", "150", "-v", "brief",
-                    "TVBrowser:I", "AndroidRuntime:E", "Gecko:E", "*:S")
-                    .redirectErrorStream(true).redirectOutput(file).start()
+                val process = ProcessBuilder(
+                    "logcat", "-d", "-t", "1500", "-v", "brief",
+                    "TVBrowser:I", "AndroidRuntime:E", "Gecko:E",
+                    "libc:F", "DEBUG:F", "*:S"
+                ).redirectErrorStream(true).redirectOutput(file).start()
+
                 if (!process.waitFor(3, TimeUnit.SECONDS)) process.destroy()
                 append(file.readText().takeLast(16000))
-            } catch (error: Exception) { append(error.message) }
-            finally { logFile?.delete() }
+            } catch (error: Exception) {
+                append(error.message)
+            } finally {
+                logFile?.delete()
+            }
         }
     }
 }
