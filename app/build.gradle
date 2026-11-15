@@ -5,58 +5,108 @@ plugins {
 
 def browserVersionCode = (project.findProperty('tvVersionCode') ?: '12').toString().toInteger()
 def browserVersionName = (project.findProperty('tvVersionName') ?: '5.0').toString()
-def browserAbis = (project.findProperty('tvAbi') ?: 'armeabi-v7a,arm64-v8a').toString().split(',')
+def browserAbis = (project.findProperty('tvAbi') ?: 'armeabi-v7a').toString().split(',')
 
 android {
     namespace 'org.mozilla.tv.firefox'
     compileSdk 37
+
     defaultConfig {
         applicationId 'org.mozilla.tv.firefox'
         minSdk 26
         targetSdk 28
         versionCode browserVersionCode
         versionName browserVersionName
+
         ndk {
             abiFilters.addAll(browserAbis as List)
         }
     }
-    buildFeatures { buildConfig true }
+
+    // Compress native libraries in the APK.
+    // Android extracts the required libraries during installation.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
     buildTypes {
-        debug { applicationIdSuffix '.debug' }
+        debug {
+            applicationIdSuffix '.debug'
+        }
+
         release {
             minifyEnabled false
             shrinkResources false
         }
     }
-    flavorDimensions 'engine'
-    productFlavors { gecko { dimension 'engine' } }
 
-    // The old Firefox source tree is outside the compiled app.
+    flavorDimensions 'engine'
+
+    productFlavors {
+        gecko {
+            dimension 'engine'
+        }
+    }
+
+    // Compile the clean browser and selected generated helpers.
     sourceSets {
         main {
             manifest.srcFile 'src/browser/AndroidManifest.xml'
-            java.setSrcDirs(['src/browser/java', 'build/generated/cleanBrowser/java'])
-            kotlin.setSrcDirs(['src/browser/java', 'build/generated/cleanBrowser/java'])
+            java.setSrcDirs([
+                'src/browser/java',
+                'build/generated/cleanBrowser/java'
+            ])
+            kotlin.setSrcDirs([
+                'src/browser/java',
+                'build/generated/cleanBrowser/java'
+            ])
             res.setSrcDirs(['build/generated/cleanBrowser/res'])
             assets.setSrcDirs([])
             aidl.setSrcDirs([])
         }
+
         gecko {
             manifest.srcFile 'src/browser/empty-manifest.xml'
             java.setSrcDirs([])
             kotlin.setSrcDirs([])
             res.setSrcDirs([])
         }
-        debug { manifest.srcFile 'src/browser/empty-manifest.xml' }
-        release { manifest.srcFile 'src/browser/empty-manifest.xml' }
-        test { java.setSrcDirs([]); kotlin.setSrcDirs([]); res.setSrcDirs([]) }
-        androidTest { java.setSrcDirs([]); kotlin.setSrcDirs([]); res.setSrcDirs([]) }
+
+        debug {
+            manifest.srcFile 'src/browser/empty-manifest.xml'
+        }
+
+        release {
+            manifest.srcFile 'src/browser/empty-manifest.xml'
+        }
+
+        test {
+            java.setSrcDirs([])
+            kotlin.setSrcDirs([])
+            res.setSrcDirs([])
+        }
+
+        androidTest {
+            java.setSrcDirs([])
+            kotlin.setSrcDirs([])
+            res.setSrcDirs([])
+        }
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    lint { abortOnError true }
+
+    lint {
+        abortOnError true
+    }
 }
 
 tasks.register('prepareCleanBrowser', Exec) {
@@ -67,7 +117,11 @@ tasks.register('prepareCleanBrowser', Exec) {
     inputs.file(rootProject.file('tools/prepare_clean_browser.py'))
     outputs.dir('build/generated/cleanBrowser')
 }
-tasks.named('preBuild').configure { dependsOn 'prepareCleanBrowser' }
+
+tasks.named('preBuild').configure {
+    dependsOn 'prepareCleanBrowser'
+}
+
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinOptions.jvmTarget = '17'
     dependsOn 'prepareCleanBrowser'
