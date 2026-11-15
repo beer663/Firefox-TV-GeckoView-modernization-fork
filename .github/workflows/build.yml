@@ -51,7 +51,7 @@ jobs:
             -PtvVersionName="5.0.$GITHUB_RUN_NUMBER" \
             --stacktrace
 
-      - name: Prepare and verify ARM APK
+      - name: Prepare and verify ARMv7 APK
         shell: bash
         run: |
           mkdir -p release-files
@@ -73,21 +73,21 @@ jobs:
                   if name.startswith('lib/') and name.endswith('.so')
               }
 
-          if abis != {'armeabi-v7a', 'arm64-v8a'}:
+          if abis != {'armeabi-v7a'}:
               raise SystemExit(
-                  f'Expected ARMv7 and ARM64, found: {sorted(abis)}. '
+                  f'Expected ARMv7 only, found: {sorted(abis)}. '
                   'Check the default ABI list in app/build.gradle.'
               )
 
           shutil.copyfile(
               apks[0],
-              'release-files/Moms-Firefox-TV-ARM-debug.apk'
+              'release-files/Moms-Firefox-TV-ARMv7-debug.apk'
           )
 
-          print('Verified ARMv7 and ARM64 APK.')
+          print('Verified ARMv7-only APK.')
           PY
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify release-files/Moms-Firefox-TV-ARM-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify release-files/Moms-Firefox-TV-ARMv7-debug.apk
 
       - name: Publish APK to GitHub Releases
         shell: bash
@@ -97,8 +97,8 @@ jobs:
           RELEASE_TAG: tv-gecko-${{ github.run_number }}-${{ github.run_attempt }}
         run: |
           gh release create "$RELEASE_TAG" \
-            release-files/Moms-Firefox-TV-ARM-debug.apk \
+            release-files/Moms-Firefox-TV-ARMv7-debug.apk \
             --target "$GITHUB_SHA" \
             --title "Mom's Firefox TV - Build $GITHUB_RUN_NUMBER" \
-            --notes "ARMv7 and ARM64 debug APK using Android automatic debug signing. Package: org.mozilla.tv.firefox.debug. A new GitHub runner may use a different debug certificate: uninstall the previous test build if Android reports an update/signature conflict." \
+            --notes "ARMv7 debug APK using Android automatic debug signing. Package: org.mozilla.tv.firefox.debug. A new GitHub runner may use a different debug certificate: uninstall the previous test build if Android reports an update/signature conflict." \
             --prerelease
