@@ -19,6 +19,7 @@ import android.view.accessibility.AccessibilityManager
 import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import org.mozilla.geckoview.GeckoView
 
 /** One pointer for the homepage, browser controls and Gecko page. */
 class TvCursorLayout @JvmOverloads constructor(
@@ -168,13 +169,7 @@ class TvCursorLayout @JvmOverloads constructor(
             val dy = motion.scrollY.toInt()
 
             if (dx != 0 || dy != 0) {
-                if (scrollPage?.invoke(
-                        motion.x,
-                        motion.y,
-                        dx,
-                        dy
-                    ) != true
-                ) {
+                if (!scrollBrowser(dx, dy)) {
                     scrollNative(
                         this,
                         motion.x,
@@ -195,12 +190,65 @@ class TvCursorLayout @JvmOverloads constructor(
         }
     }
 
+    private fun scrollBrowser(dx: Int, dy: Int): Boolean {
+        val scroll = scrollPage ?: return false
+        if (scroll(motion.x, motion.y, dx, dy)) return true
+
+        // Up reaches the window edge above the toolbar, outside the webpage.
+        // Keep the pointer free to reach the toolbar, but send the scroll from
+        // a point inside the visible GeckoView so the browser accepts it.
+        val page = findVisiblePage(this) ?: return false
+        val bounds = Rect()
+
+        if (!page.getLocalVisibleRect(bounds) ||
+            bounds.width() < 3 ||
+            bounds.height() < 3
+        ) {
+            return false
+        }
+
+        val pageOrigin = IntArray(2)
+        val rootOrigin = IntArray(2)
+
+        page.getLocationInWindow(pageOrigin)
+        getLocationInWindow(rootOrigin)
+
+        bounds.offset(
+            pageOrigin[0] - rootOrigin[0],
+            pageOrigin[1] - rootOrigin[1]
+        )
+
+        return scroll(
+            motion.x.coerceIn(bounds.left + 1f, bounds.right - 1f),
+            motion.y.coerceIn(bounds.top + 1f, bounds.bottom - 1f),
+            dx,
+            dy
+        )
+    }
+
+    private fun findVisiblePage(view: View): GeckoView? {
+        if (!view.isShown) return null
+        if (view is GeckoView) return view
+
+        if (view is ViewGroup) {
+            for (i in view.childCount - 1 downTo 0) {
+                findVisiblePage(view.getChildAt(i))?.let {
+                    return it
+                }
+            }
+        }
+
+        return null
+    }
+
     fun dispatchSelectClick(): Boolean {
         pausePointer()
         downTime = SystemClock.uptimeMillis()
+
         val handled = sendTouch(MotionEvent.ACTION_DOWN)
         sendTouch(MotionEvent.ACTION_UP)
         reveal()
+
         return handled
     }
 
