@@ -16,6 +16,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.Html
+import android.text.InputType
+import android.text.TextUtils
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -953,6 +955,7 @@ class BrowserActivity : AppCompatActivity() {
         errorCover.visibility = View.GONE
         failures[session]?.let { showError(it.message) }
         updateButtons()
+
         // Remove the marker before recovery. A failure during this attempt requires Retry.
         if (resumed && stopped.contains(session) && backgroundDiscards.remove(session)) {
             recoverCurrentPage()
@@ -1082,7 +1085,7 @@ class BrowserActivity : AppCompatActivity() {
 
         body.addView(
             label(
-                getString(R.string.tv_saved_sites_hint),
+                "Select a bookmark to open it. Hold OK to edit its name or remove it.",
                 14,
                 Color.DKGRAY
             )
@@ -1107,16 +1110,32 @@ class BrowserActivity : AppCompatActivity() {
                 ) / 180
             ).toInt().coerceIn(2, 6)
 
+        fun cellLayout() = LinearLayout.LayoutParams(0, dp(156), 1f).apply {
+            setMargins(dp(6), dp(10), dp(6), dp(6))
+        }
+
         all.chunked(columns).forEach { group ->
-            val row = LinearLayout(this)
+            val row = LinearLayout(this).apply {
+                isBaselineAligned = false
+            }
 
             group.forEach { (url, title) ->
                 val button = Button(this).apply {
-                    text = "${title.take(1).uppercase()}\n\n$title"
+                    text = title.ifBlank { Uri.parse(url).host ?: url }
                     isAllCaps = false
                     textSize = 17f
                     setTextColor(Color.rgb(32, 33, 36))
-                    maxLines = 4
+                    gravity = Gravity.CENTER
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    minWidth = 0
+                    minimumWidth = 0
+                    minHeight = 0
+                    minimumHeight = 0
+                    setSingleLine(false)
+                    setHorizontallyScrolling(false)
+                    maxLines = 5
+                    ellipsize = TextUtils.TruncateAt.END
+                    contentDescription = "$text. Hold OK for bookmark options."
                     background = tileBackground()
 
                     setOnClickListener {
@@ -1124,48 +1143,48 @@ class BrowserActivity : AppCompatActivity() {
                     }
 
                     setOnLongClickListener {
-                        AlertDialog.Builder(this@BrowserActivity)
-                            .setTitle(title)
-                            .setMessage("Remove this bookmark?")
-                            .setPositiveButton("Remove") { _, _ ->
-                                saveBookmarks(
-                                    bookmarks().filterNot { it.first == url }
-                                )
-                                showHome()
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-
+                        showBookmarkOptions(url, title)
                         true
                     }
                 }
 
-                row.addView(
-                    button,
-                    LinearLayout.LayoutParams(0, dp(156), 1f).apply {
-                        setMargins(dp(6), dp(10), dp(6), dp(6))
-                    }
-                )
+                row.addView(button, cellLayout())
             }
 
             repeat(columns - group.size) {
-                row.addView(
-                    View(this),
-                    LinearLayout.LayoutParams(0, 1, 1f)
-                )
+                // Empty cells keep the same margins and height as occupied cells.
+                row.addView(View(this), cellLayout())
             }
 
             body.addView(row)
         }
 
-        val home = ScrollView(this).apply { isFillViewport = true; addView(body) }
+        val home = ScrollView(this).apply {
+            isFillViewport = true
+            addView(body)
+        }
+
         showPanel(home, "home")
+
         val bookmarks = all.map { it.first }
-        address.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, bookmarks))
+
+        address.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_dropdown_item_1line,
+                bookmarks
+            )
+        )
+
         history.entriesAsync { recent ->
             if (!closed && panel === home) {
-                address.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line,
-                    (bookmarks + recent.take(30).map { it.url }).distinct()))
+                address.setAdapter(
+                    ArrayAdapter(
+                        this,
+                        android.R.layout.simple_dropdown_item_1line,
+                        (bookmarks + recent.take(30).map { it.url }).distinct()
+                    )
+                )
             }
         }
 
@@ -1176,26 +1195,131 @@ class BrowserActivity : AppCompatActivity() {
         findViewById<View>(R.id.tvHomeButton).requestFocus()
     }
 
+    private fun showBookmarkOptions(url: String, title: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title.ifBlank { Uri.parse(url).host ?: url })
+            .setItems(arrayOf("Edit name", "Remove bookmark")) { _, which ->
+                if (which == 0) {
+                    editBookmarkName(url, title)
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle("Remove this bookmark?")
+                        .setMessage(title.ifBlank { url })
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Remove") { _, _ ->
+                            saveBookmarks(bookmarks().filterNot { it.first == url })
+                            showHome()
+                        }
+                        .show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun editBookmarkName(url: String, title: String) {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setText(title.ifBlank { Uri.parse(url).host ?: url })
+            textSize = 18f
+            maxLines = 4
+            setSelectAllOnFocus(true)
+        }
+
+        val field = FrameLayout(this).apply {
+            setPadding(dp(24), dp(8), dp(24), dp(8))
+            addView(input, FrameLayout.LayoutParams(-1, -2))
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Edit bookmark name")
+            .setView(field)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val name = input.text.toString().trim()
+
+                if (name.isBlank()) {
+                    input.error = "Enter a bookmark name."
+                    input.requestFocus()
+                } else {
+                    saveBookmarks(
+                        bookmarks().map {
+                            if (it.first == url) url to name else it
+                        }
+                    )
+                    dialog.dismiss()
+                    showHome()
+                }
+            }
+
+            input.requestFocus()
+            input.selectAll()
+
+            dialog.window?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
+            )
+        }
+
+        dialog.show()
+    }
+
     private fun showHistory() {
         val body = listBody("History")
+
         action(body, "Clear history") {
-            AlertDialog.Builder(this).setTitle("Clear browsing history?")
+            AlertDialog.Builder(this)
+                .setTitle("Clear browsing history?")
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Clear") { _, _ -> history.clear(); showHistory() }.show()
+                .setPositiveButton("Clear") { _, _ ->
+                    history.clear()
+                    showHistory()
+                }
+                .show()
         }
-        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        val rows = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
         rows.addView(label("Loading history…", 18))
         body.addView(rows)
-        val screen = ScrollView(this).apply { addView(body) }
+
+        val screen = ScrollView(this).apply {
+            addView(body)
+        }
+
         showPanel(screen, "history")
+
         history.entriesAsync { items ->
             if (!closed && panel === screen) {
                 rows.removeAllViews()
-                if (items.isEmpty()) rows.addView(label("No browsing history yet.", 18))
+
+                if (items.isEmpty()) {
+                    rows.addView(label("No browsing history yet.", 18))
+                }
+
                 items.forEach { item ->
                     val row = LinearLayout(this)
-                    action(row, "${item.title.ifBlank { item.url }}\n${item.url}", 1f) { load(item.url) }
-                    action(row, "Remove") { history.remove(item.url); showHistory() }
+
+                    action(
+                        row,
+                        "${item.title.ifBlank { item.url }}\n${item.url}",
+                        1f
+                    ) {
+                        load(item.url)
+                    }
+
+                    action(row, "Remove") {
+                        history.remove(item.url)
+                        showHistory()
+                    }
+
                     rows.addView(row)
                 }
             }
@@ -1817,10 +1941,21 @@ class BrowserActivity : AppCompatActivity() {
     private fun releaseHiddenPage() {
         if (panel == null || sessions.isEmpty() || stopped.contains(session)) return
         if (permissionDialogs.isNotEmpty()) return
+
         try {
             // Closing a session must never interrupt a running download.
-            if (downloads.entries().any { it.status in listOf(DownloadManager.STATUS_RUNNING,
-                    DownloadManager.STATUS_PENDING, DownloadManager.STATUS_PAUSED) }) return
+            if (
+                downloads.entries().any {
+                    it.status in listOf(
+                        DownloadManager.STATUS_RUNNING,
+                        DownloadManager.STATUS_PENDING,
+                        DownloadManager.STATUS_PAUSED
+                    )
+                }
+            ) {
+                return
+            }
+
             val current = session
             stopped.add(current)
             backgroundDiscards.add(current)
@@ -1828,9 +1963,15 @@ class BrowserActivity : AppCompatActivity() {
             current.setFocused(false)
             current.setActive(false)
             gecko.releaseSession()
+
             if (current.isOpen) current.close()
+
             loading = false
-            Log.i(TAG, "Released hidden page after memory warning; restore deferred until visible")
+
+            Log.i(
+                TAG,
+                "Released hidden page after memory warning; restore deferred until visible"
+            )
         } catch (error: Exception) {
             Log.w(TAG, "Hidden page could not be released", error)
         }
