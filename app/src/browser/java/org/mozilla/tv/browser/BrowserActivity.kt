@@ -136,7 +136,6 @@ class BrowserActivity : AppCompatActivity() {
                 return connection
             }
         }
-
         container.addView(gecko, FrameLayout.LayoutParams(-1, -1))
 
         progress = ProgressBar(
@@ -169,7 +168,453 @@ class BrowserActivity : AppCompatActivity() {
             addView(controls)
         }
 
-        container.addView(errorCover, FrameLayout.LayoutParams(-1, -.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS ->
+        container.addView(errorCover, FrameLayout.LayoutParams(-1, -1))
+        errorCover.visibility = View.GONE
+
+        sessions.add(makeSession().also { it.open(runtime) })
+        gecko.setSession(session)
+
+        root.scrollPage = { x, y, dx, dy ->
+            val origin = IntArray(2)
+            val rootOrigin = IntArray(2)
+
+            gecko.getLocationInWindow(origin)
+            root.getLocationInWindow(rootOrigin)
+
+            val bounds = Rect(
+                origin[0] - rootOrigin[0],
+                origin[1] - rootOrigin[1],
+                origin[0] - rootOrigin[0] + gecko.width,
+                origin[1] - rootOrigin[1] + gecko.height
+            )
+
+            if (
+                panel == null &&
+                errorCover.visibility != View.VISIBLE &&
+                !stopped.contains(session) &&
+                bounds.contains(x.toInt(), y.toInt())
+            ) {
+                scrollWebsite(x - bounds.left, y - bounds.top, dx, dy)
+            } else {
+                false
+            }
+        }
+
+        findViewById<View>(R.id.tvHomeButton).setOnClickListener {
+            showHome()
+        }
+
+        findViewById<View>(R.id.tvBookmarkButton).setOnClickListener {
+            toggleBookmark()
+        }
+
+        findViewById<View>(R.id.tvDownloadsButton).setOnClickListener {
+            showDownloads()
+        }
+
+        findViewById<View>(R.id.tvHistoryButton).setOnClickListener {
+            showHistory()
+        }
+
+        findViewById<View>(R.id.tvSettingsButton).setOnClickListener {
+            showSettings()
+        }
+
+        findViewById<View>(R.id.tvBackButton).setOnClickListener {
+            navigateBack()
+        }
+
+        findViewById<View>(R.id.tvForwardButton).setOnClickListener {
+            showPage()
+            if (forward[session] == true) session.goForward()
+        }
+
+        findViewById<View>(R.id.tvRefreshButton).setOnClickListener {
+            retry()
+        }
+
+        findViewById<View>(R.id.tvAddressGoButton).setOnClickListener {
+            submitAddress()
+        }
+
+        address.setOnEditorActionListener { _, action, event ->
+            if (
+                action == EditorInfo.IME_ACTION_GO ||
+                event?.let {
+                    it.action == KeyEvent.ACTION_DOWN &&
+                        it.keyCode == KeyEvent.KEYCODE_ENTER
+                } == true
+            ) {
+                submitAddress()
+                true
+            } else {
+                false
+            }
+        }
+
+        address.setOnClickListener {
+            openKeyboard()
+        }
+
+        address.setSelectAllOnFocus(true)
+
+        address.setOnFocusChangeListener { _, focused ->
+            if (focused) {
+                BrowserApp.prepareSearchConnection(this)
+                address.post {
+                    if (address.hasFocus()) address.selectAll()
+                }
+            }
+        }
+
+        address.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_UP) {
+                address.post {
+                    if (address.hasFocus()) address.selectAll()
+                }
+            }
+            false
+        }
+
+        address.setOnItemClickListener { _, _, _, _ ->
+            submitAddress()
+        }
+
+        findViewById<View>(R.id.tvToolbarButtonRow).addOnLayoutChangeListener {
+                row, left, _, right, _, _, _, _, _ ->
+            val available = (row.parent as View).width - dp(24)
+            val width = (right - left).coerceAtMost(available)
+            val addressRow = findViewById<View>(R.id.tvAddressRow)
+
+            if (width > 0 && addressRow.layoutParams.width != width) {
+                addressRow.layoutParams = addressRow.layoutParams.apply {
+                    this.width = width
+                }
+            }
+        }
+
+        val saved = state?.getString("page")
+
+        if (!saved.isNullOrBlank()) {
+            load(saved)
+        } else if (!handleIntent(intent)) {
+            showHome()
+        }
+
+        updateButtons()
+    }
+
+    private fun makeSession(): GeckoSession {
+        val desktop = prefs.getBoolean("desktop", false)
+
+        val s = GeckoSession(
+            GeckoSessionSettings.Builder()
+                .userAgentMode(
+                    if (desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+                    else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+                )
+                .viewportMode(
+                    if (desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
+                    else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
+                )
+                .suspendMediaWhenInactive(true)
+                .build()
+        )
+
+        s.promptDelegate = prompts
+
+        s.navigationDelegate = object : GeckoSession.NavigationDelegate {
+            override fun onLoadRequest(
+                s: GeckoSession,
+                request: GeckoSession.NavigationDelegate.LoadRequest
+            ): GeckoResult<AllowOrDeny> {
+                if (
+                    request.target ==
+                    GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW
+                ) {
+                    Log.i(TAG, "Blocked website popup")
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+
+                val scheme = Uri.parse(request.uri).scheme?.lowercase()
+
+                if (ExtensionsActivity.isXpiUrl(request.uri)) {
+                    if (request.hasUserGesture || request.isDirectNavigation) {
+                        ExtensionsActivity.openInstaller(
+                            this@BrowserActivity,
+                            request.uri
+                        )
+                    }
+
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+
+                if (
+                    scheme in listOf(
+                        "http", "https", "about", "data", "blob", "moz-extension"
+                    )
+                ) {
+                    return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                }
+
+                if (request.hasUserGesture) externalLink(request.uri)
+
+                return GeckoResult.fromValue(AllowOrDeny.DENY)
+            }
+
+            override fun onLocationChange(
+                s: GeckoSession,
+                url: String?,
+                permissions: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
+                hasUserGesture: Boolean
+            ) {
+                if (closed || !sessions.contains(s)) return
+                if (failures.containsKey(s) && isErrorDocument(url.orEmpty())) return
+
+                if (committedUrls[s] != url) titles.remove(s)
+
+                committedUrls[s] = url.orEmpty()
+                urls[s] = url.orEmpty()
+
+                if (s == session) {
+                    updateAddress()
+                    updateButtons()
+                }
+            }
+
+            override fun onCanGoBack(s: GeckoSession, value: Boolean) {
+                back[s] = value
+                if (s == session) updateButtons()
+            }
+
+            override fun onCanGoForward(s: GeckoSession, value: Boolean) {
+                forward[s] = value
+                if (s == session) updateButtons()
+            }
+
+            override fun onLoadError(
+                s: GeckoSession,
+                uri: String?,
+                error: WebRequestError
+            ): GeckoResult<String>? {
+                if (closed || !sessions.contains(s)) return null
+
+                Log.e(
+                    TAG,
+                    "Load failed category=${error.category} code=${error.code}"
+                )
+
+                val message = when (error.code) {
+                    WebRequestError.ERROR_SECURITY_BAD_CERT,
+                    WebRequestError.ERROR_BAD_HSTS_CERT ->
+                        "This website's certificate could not be verified. " +
+                            "Check the TV's date and time. " +
+                            "If those are correct, the website may need to fix its certificate."
+
+                    WebRequestError.ERROR_SECURITY_SSL ->
+                        "A secure connection could not be established with this website."
+
+                    WebRequestError.ERROR_UNKNOWN_HOST ->
+                        "The website address could not be found. " +
+                            "Check the address and your connection."
+
+                    WebRequestError.ERROR_NET_TIMEOUT ->
+                        "The website took too long to respond."
+
+                    WebRequestError.ERROR_OFFLINE ->
+                        "The TV has no internet connection."
+
+                    else ->
+                        "The page could not load (error ${error.code})."
+                }
+
+                failures[s] = PageFailure(
+                    uri.orEmpty().ifBlank { urls[s].orEmpty() },
+                    message
+                )
+
+                if (s == session) showError(message)
+
+                // Never leave an unexplained blank Gecko page.
+                val html =
+                    "<!doctype html><meta name=viewport content='width=device-width'>" +
+                        "<h1>Page could not load</h1><p>${Html.escapeHtml(message)}</p>"
+
+                return GeckoResult.fromValue(
+                    "data:text/html;charset=utf-8," + Uri.encode(html)
+                )
+            }
+
+            override fun onNewSession(
+                s: GeckoSession,
+                uri: String
+            ): GeckoResult<GeckoSession>? {
+                Log.i(TAG, "Blocked website new-session request")
+                return null
+            }
+        }
+
+        s.progressDelegate = object : GeckoSession.ProgressDelegate {
+            override fun onSessionStateChange(s: GeckoSession, state: GeckoSession.SessionState) {
+                if (closed || s != sessions.lastOrNull() || stopped.contains(s) || failures.containsKey(s)) return
+                val index = state.currentIndex
+                if (index !in 0 until state.size) return
+                val url = state[index].uri.orEmpty()
+                if (url != urls[s] || Uri.parse(url).scheme !in listOf("http", "https")) return
+                val encoded = state.toString()
+                if (encoded.length <= 131072) {
+                    savedStates[s] = encoded
+                    savedStateUrls[s] = url
+                    Log.d(TAG, "Retained page state (${encoded.length} chars)")
+                } else {
+                    savedStates.remove(s)
+                    savedStateUrls.remove(s)
+                }
+            }
+
+            override fun onPageStart(s: GeckoSession, url: String) {
+                if (closed || !sessions.contains(s)) return
+
+                if (failures.containsKey(s) && isErrorDocument(url)) {
+                    if (s == session) {
+                        showError(failures.getValue(s).message)
+                    }
+                    return
+                }
+
+                failures.remove(s)
+                urls[s] = url
+                if (s == session) navigationStartedAt = SystemClock.elapsedRealtime()
+
+                if (s == session) {
+                    setLoading(true)
+                    updateAddress()
+                }
+
+                Log.i(TAG, "Page start host=${Uri.parse(url).host}")
+            }
+
+            override fun onProgressChange(s: GeckoSession, value: Int) {
+                if (s == session) progress.progress = value
+            }
+
+            override fun onPageStop(s: GeckoSession, success: Boolean) {
+                if (closed || !sessions.contains(s)) return
+
+                if (success && !failures.containsKey(s)) {
+                    history.record(
+                        urls[s].orEmpty(),
+                        titles[s].orEmpty()
+                    )
+                }
+
+                if (s == session) {
+                    setLoading(false)
+                    failures[s]?.let { showError(it.message) }
+                    updateAddress()
+                }
+
+                Log.i(TAG, "Page stop success=$success")
+            }
+        }
+
+        s.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onFirstContentfulPaint(s: GeckoSession) {
+                if (!closed && s == sessions.lastOrNull() && navigationStartedAt > 0) {
+                    Log.i(TAG, "First page content after ${SystemClock.elapsedRealtime() - navigationStartedAt}ms")
+                }
+            }
+
+            override fun onTitleChange(s: GeckoSession, title: String?) {
+                if (closed || !sessions.contains(s)) return
+                if (failures.containsKey(s)) return
+
+                titles[s] = title.orEmpty()
+                history.updateTitle(urls[s].orEmpty(), title.orEmpty())
+            }
+
+            override fun onFullScreen(s: GeckoSession, value: Boolean) {
+                if (s == session) setFullscreen(value)
+            }
+
+            override fun onCrash(s: GeckoSession) {
+                failed(s, "The website process crashed.")
+            }
+
+            override fun onKill(s: GeckoSession) {
+                failed(
+                    s,
+                    "Android stopped this website process. " +
+                        "The TV may need more available memory."
+                )
+            }
+
+            override fun onCloseRequest(s: GeckoSession) {
+                if (closed || !sessions.contains(s)) return
+
+                if (s == session && sessions.size > 1) {
+                    closeChild()
+                } else if (
+                    s != sessions.lastOrNull() &&
+                    sessions.remove(s)
+                ) {
+                    disposeSession(s)
+                    updateButtons()
+                }
+            }
+
+            override fun onExternalResponse(
+                s: GeckoSession,
+                response: WebResponse
+            ) {
+                committedUrls[s]?.let { urls[s] = it }
+
+                if (s == session) {
+                    setLoading(false)
+                    updateAddress()
+                }
+
+                val mime = response.headers.entries
+                    .firstOrNull {
+                        it.key.equals("content-type", true)
+                    }?.value
+
+                if (
+                    ExtensionsActivity.isExtensionResponse(response.uri, mime)
+                ) {
+                    DownloadsStore.closeBody(response)
+
+                    ExtensionsActivity.openInstaller(
+                        this@BrowserActivity,
+                        response.uri
+                    )
+                } else {
+                    prompts.confirmDownload(response)
+                }
+            }
+        }
+
+        s.permissionDelegate = object : GeckoSession.PermissionDelegate {
+            override fun onContentPermissionRequest(
+                s: GeckoSession,
+                p: GeckoSession.PermissionDelegate.ContentPermission
+            ): GeckoResult<Int> {
+                val allowed =
+                    GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW
+                val denied =
+                    GeckoSession.PermissionDelegate.ContentPermission.VALUE_DENY
+
+                // TV streaming is allowed to start with or without sound.
+                if (p.permission == GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE ||
+                    p.permission == GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE) {
+                    return GeckoResult.fromValue(allowed)
+                }
+                if (p.value != GeckoSession.PermissionDelegate.ContentPermission.VALUE_PROMPT) {
+                    return GeckoResult.fromValue(p.value)
+                }
+
+                val action = when (p.permission) {
+                    GeckoSession.PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS ->
                         "play protected video using DRM"
 
                     GeckoSession.PermissionDelegate.PERMISSION_STORAGE_ACCESS ->
@@ -1393,10 +1838,7 @@ class BrowserActivity : AppCompatActivity() {
             .split(',', ';')
             .map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("horizontalAlignment=") }
-
-        info.privateImeOptions =
-            (options + "horizontalAlignment=center").joinToString(",")
-
+        info.privateImeOptions = (options + "horizontalAlignment=center").joinToString(",")
         info.imeOptions = info.imeOptions or
             EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_FLAG_NO_EXTRACT_UI
 
@@ -1404,53 +1846,36 @@ class BrowserActivity : AppCompatActivity() {
         // Preserve the input class, flags, action, and password protection.
         if ((info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT) {
             val variation = when (info.inputType and InputType.TYPE_MASK_VARIATION) {
-                InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT ->
-                    InputType.TYPE_TEXT_VARIATION_NORMAL
-
-                InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ->
-                    InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-
-                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ->
-                    InputType.TYPE_TEXT_VARIATION_PASSWORD
-
-                else ->
-                    info.inputType and InputType.TYPE_MASK_VARIATION
+                InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT -> InputType.TYPE_TEXT_VARIATION_NORMAL
+                InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS -> InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD -> InputType.TYPE_TEXT_VARIATION_PASSWORD
+                else -> info.inputType and InputType.TYPE_MASK_VARIATION
             }
-
-            info.inputType =
-                (info.inputType and InputType.TYPE_MASK_VARIATION.inv()) or variation
+            info.inputType = (info.inputType and InputType.TYPE_MASK_VARIATION.inv()) or variation
         }
     }
 
     private fun scrollWebsite(x: Float, y: Float, dx: Int, dy: Int): Boolean {
         if (gecko.width < 3 || gecko.height < 3) return false
-
         val inset = minOf(dp(96).toFloat(), gecko.height / 3f)
         val factor = session.panZoomController.scrollFactor.coerceAtLeast(1f)
-
         val coords = MotionEvent.PointerCoords().apply {
             this.x = x.coerceIn(1f, gecko.width - 1f)
-
             // Fixed site headers/navigation can cover the very edge of the page.
             this.y = y.coerceIn(inset, gecko.height - inset)
-
             setAxisValue(MotionEvent.AXIS_HSCROLL, -dx.toFloat() / factor)
             setAxisValue(MotionEvent.AXIS_VSCROLL, -dy.toFloat() / factor)
         }
-
         val pointer = MotionEvent.PointerProperties().apply {
             id = 0
             toolType = MotionEvent.TOOL_TYPE_MOUSE
         }
-
         val now = SystemClock.uptimeMillis()
-
         val wheel = MotionEvent.obtain(
             now, now, MotionEvent.ACTION_SCROLL, 1,
             arrayOf(pointer), arrayOf(coords), 0, 0,
             1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0
         )
-
         return try {
             // Gecko hit-tests wheel input, including nested panels and iframes.
             gecko.onGenericMotionEvent(wheel)
@@ -1529,10 +1954,8 @@ class BrowserActivity : AppCompatActivity() {
         resumed = true
         pausedForBackground = false
         extensionPermissions.attach()
-
         val deferred = deferredVisit
         deferredVisit = null
-
         if (deferred != null) visit(deferred.first, deferred.second)
         else if (::gecko.isInitialized && panel == null) showPage()
 
@@ -1593,10 +2016,8 @@ class BrowserActivity : AppCompatActivity() {
             }
 
             val current = session
-
             stopped.add(current)
             backgroundDiscards.add(current)
-
             current.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
             current.setFocused(false)
             current.setActive(false)
