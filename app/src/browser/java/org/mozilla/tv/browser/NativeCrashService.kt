@@ -21,7 +21,9 @@ class NativeCrashService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+
         val manager = getSystemService(NotificationManager::class.java)
+
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL,
@@ -52,43 +54,26 @@ class NativeCrashService : Service() {
                 val report = buildString {
                     append("Recorded: ${Date()}\n")
                     append(
-                        "Process: ${
-                            intent.getStringExtra(
-                                GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE
-                            )
-                        }\n"
+                        "Process: " +
+                            "${intent.getStringExtra(GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE)}\n"
                     )
                     append(
-                        "Visibility: ${
-                            intent.getStringExtra(
-                                GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY
-                            )
-                        }\n"
+                        "Visibility: " +
+                            "${intent.getStringExtra(GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY)}\n"
                     )
                     append(
-                        "Remote type: ${
-                            intent.getStringExtra(
-                                GeckoRuntime.EXTRA_CRASH_REMOTE_TYPE
-                            )
-                        }\n"
+                        "Remote type: " +
+                            "${intent.getStringExtra(GeckoRuntime.EXTRA_CRASH_REMOTE_TYPE)}\n"
                     )
 
-                    val dump = intent.getStringExtra(
-                        GeckoRuntime.EXTRA_MINIDUMP_PATH
-                    )
-                    append(
-                        "Native dump present: ${
-                            dump?.let { File(it).isFile } == true
-                        }\n"
-                    )
+                    val dump = intent.getStringExtra(GeckoRuntime.EXTRA_MINIDUMP_PATH)
+                    append("Native dump present: ${dump?.let { File(it).isFile } == true}\n")
 
-                    val path = intent.getStringExtra(
-                        GeckoRuntime.EXTRA_EXTRAS_PATH
-                    )
+                    val path = intent.getStringExtra(GeckoRuntime.EXTRA_EXTRAS_PATH)
 
                     if (path != null) {
                         try {
-                            // Bound reads and copy only diagnostic fields.
+                            // Bound reads and copy diagnostic fields, excluding page URLs.
                             val raw = File(path).reader().use {
                                 val buffer = CharArray(131072)
                                 val count = it.read(buffer)
@@ -96,6 +81,7 @@ class NativeCrashService : Service() {
                             }
 
                             val extra = JSONObject(raw)
+
                             for (key in listOf(
                                 "MozCrashReason",
                                 "CrashReason",
@@ -110,11 +96,7 @@ class NativeCrashService : Service() {
                                 "GraphicsCriticalError"
                             )) {
                                 if (extra.has(key)) {
-                                    append(
-                                        "$key: ${
-                                            extra.optString(key).take(4000)
-                                        }\n"
-                                    )
+                                    append("$key: ${extra.optString(key).take(4000)}\n")
                                 }
                             }
                         } catch (error: Exception) {
@@ -126,22 +108,18 @@ class NativeCrashService : Service() {
                     }
                 }
 
-                val target = AtomicFile(
-                    File(filesDir, "last-native-crash.txt")
-                )
+                val target = AtomicFile(File(filesDir, "last-native-crash.txt"))
                 val stream = target.startWrite()
 
                 try {
-                    stream.write(
-                        report.take(24000).toByteArray(Charsets.UTF_8)
-                    )
+                    stream.write(report.take(24000).toByteArray(Charsets.UTF_8))
                     target.finishWrite(stream)
                 } catch (error: Exception) {
                     target.failWrite(stream)
                     throw error
                 }
             } finally {
-                // Keep running if another report was queued.
+                // Keep the service alive if another report was queued.
                 if (stopSelfResult(startId)) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                 }
