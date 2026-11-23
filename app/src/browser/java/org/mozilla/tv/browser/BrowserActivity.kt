@@ -14,6 +14,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.Html
 import android.util.Log
 import android.view.Gravity
@@ -69,6 +70,12 @@ class BrowserActivity : AppCompatActivity() {
     private val forward = mutableMapOf<GeckoSession, Boolean>()
     private val media = mutableMapOf<GeckoSession, MediaSession>()
     private val stopped = mutableSetOf<GeckoSession>()
+    private val backgroundDiscards = mutableSetOf<GeckoSession>()
+    private val savedStates = mutableMapOf<GeckoSession, String>()
+    private val savedStateUrls = mutableMapOf<GeckoSession, String>()
+    private var pausedForBackground = false
+    private var deferredVisit: Pair<String, String?>? = null
+    private var navigationStartedAt = 0L
 
     private data class PageFailure(val url: String, val message: String)
 
@@ -245,6 +252,7 @@ class BrowserActivity : AppCompatActivity() {
 
         address.setOnFocusChangeListener { _, focused ->
             if (focused) {
+                BrowserApp.prepareSearchConnection(this)
                 address.post {
                     if (address.hasFocus()) address.selectAll()
                 }
@@ -439,6 +447,23 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
+            override fun onSessionStateChange(s: GeckoSession, state: GeckoSession.SessionState) {
+                if (closed || s != sessions.lastOrNull() || stopped.contains(s) || failures.containsKey(s)) return
+                val index = state.currentIndex
+                if (index !in 0 until state.size) return
+                val url = state[index].uri.orEmpty()
+                if (url != urls[s] || Uri.parse(url).scheme !in listOf("http", "https")) return
+                val encoded = state.toString()
+                if (encoded.length <= 131072) {
+                    savedStates[s] = encoded
+                    savedStateUrls[s] = url
+                    Log.d(TAG, "Retained page state (${encoded.length} chars)")
+                } else {
+                    savedStates.remove(s)
+                    savedStateUrls.remove(s)
+                }
+            }
+
             override fun onPageStart(s: GeckoSession, url: String) {
                 if (closed || !sessions.contains(s)) return
 
@@ -451,6 +476,7 @@ class BrowserActivity : AppCompatActivity() {
 
                 failures.remove(s)
                 urls[s] = url
+                if (s == session) navigationStartedAt = SystemClock.elapsedRealtime()
 
                 if (s == session) {
                     setLoading(true)
@@ -485,6 +511,12 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         s.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onFirstContentfulPaint(s: GeckoSession) {
+                if (!closed && s == sessions.lastOrNull() && navigationStartedAt > 0) {
+                    Log.i(TAG, "First page content after ${SystemClock.elapsedRealtime() - navigationStartedAt}ms")
+                }
+            }
+
             override fun onTitleChange(s: GeckoSession, title: String?) {
                 if (closed || !sessions.contains(s)) return
                 if (failures.containsKey(s)) return
@@ -564,24 +596,16 @@ class BrowserActivity : AppCompatActivity() {
                 val denied =
                     GeckoSession.PermissionDelegate.ContentPermission.VALUE_DENY
 
-                if (
-                    p.value !=
-                    GeckoSession.PermissionDelegate.ContentPermission.VALUE_PROMPT
-                ) {
+                // TV streaming is allowed to start with or without sound.
+                if (p.permission == GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE ||
+                    p.permission == GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE) {
+                    return GeckoResult.fromValue(allowed)
+                }
+                if (p.value != GeckoSession.PermissionDelegate.ContentPermission.VALUE_PROMPT) {
                     return GeckoResult.fromValue(p.value)
                 }
 
-                if (
-                    p.permission ==
-                    GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE
-                ) {
-                    return GeckoResult.fromValue(allowed)
-                }
-
                 val action = when (p.permission) {
-                    GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE ->
-                        "play video or audio automatically"
-
                     GeckoSession.PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS ->
                         "play protected video using DRM"
 
@@ -683,14 +707,15 @@ class BrowserActivity : AppCompatActivity() {
         return s
     }
 
-    private fun currentUrl() =
-        sessions.lastOrNull()?.let {
+    private fun currentUrl(): String {
+        val url = deferredVisit?.first ?: sessions.lastOrNull()?.let {
             failures[it]?.url ?: urls[it]
         }.orEmpty()
+        return if (url == "about:blank") "" else url
+    }
 
     private fun isErrorDocument(url: String) =
-        url.startsWith("data:text/html") ||
-            url.startsWith("about:neterror") ||
+        url.startsWith("data:text/html") || url.startsWith("about:neterror") ||
             url.startsWith("about:certerror")
 
     private fun submitAddress() {
@@ -698,37 +723,50 @@ class BrowserActivity : AppCompatActivity() {
         if (text.isNotEmpty()) load(addressOrSearch(text))
     }
 
-    private fun load(url: String) {
-        // An address, bookmark, or history selection starts a fresh visit.
+    private fun load(url: String) = visit(url, null)
+
+    private fun visit(url: String, restore: String?) {
         releaseBackgroundWindows()
-
+        val original = session
+        backgroundDiscards.remove(original)
+        if (pausedForBackground) {
+            deferredVisit = url to restore
+            return
+        }
+        deferredVisit = null
         if (stopped.contains(session)) replaceStopped()
-
+        if (restore == null) {
+            savedStates.remove(session)
+            savedStateUrls.remove(session)
+        }
         failures.remove(session)
         urls[session] = url
-
         hideKeyboard()
         showPage()
         setLoading(true)
-
         address.setText(url, false)
         gecko.requestFocus()
+        if (restore != null) {
+            try {
+                val state = GeckoSession.SessionState.fromString(restore)
+                if (state != null) session.restoreState(state) else session.loadUri(url)
+            } catch (_: Exception) { session.loadUri(url) }
+        } else session.loadUri(url)
+    }
 
-        session.loadUri(url)
+    private fun recoverCurrentPage() {
+        val url = currentUrl()
+        if (url.isBlank()) { showHome(); return }
+        val saved = savedStates[session]?.takeIf { savedStateUrls[session] == url }
+        visit(url, saved)
     }
 
     private fun retry() {
         if (currentUrl().isBlank()) return
-
-        if (
-            stopped.contains(session) ||
-            failures.containsKey(session)
-        ) {
-            load(currentUrl())
-        } else {
-            showPage()
-            setLoading(true)
-            session.reload()
+        when {
+            stopped.contains(session) -> recoverCurrentPage()
+            failures.containsKey(session) -> load(currentUrl())
+            else -> { showPage(); setLoading(true); session.reload() }
         }
     }
 
@@ -740,8 +778,8 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     private fun failed(s: GeckoSession, message: String) {
-        if (!sessions.contains(s)) return
-
+        if (closed || !sessions.contains(s) || stopped.contains(s)) return
+        if (!resumed || panel != null) backgroundDiscards.add(s)
         stopped.add(s)
         failures[s] = PageFailure(urls[s].orEmpty(), message)
 
@@ -761,6 +799,7 @@ class BrowserActivity : AppCompatActivity() {
             playing = false
             updateKeepAwake()
             showError("$message Use Retry page to reopen it.")
+            updateButtons()
         }
     }
 
@@ -794,6 +833,9 @@ class BrowserActivity : AppCompatActivity() {
         failures.remove(s)
         media.remove(s)
         stopped.remove(s)
+        backgroundDiscards.remove(s)
+        savedStates.remove(s)
+        savedStateUrls.remove(s)
     }
 
     private fun disposeSession(s: GeckoSession) {
@@ -878,7 +920,7 @@ class BrowserActivity : AppCompatActivity() {
                 sessions.size > 1
 
         findViewById<View>(R.id.tvForwardButton).isEnabled =
-            forward[session] == true
+            !stopped.contains(session) && forward[session] == true
 
         findViewById<View>(R.id.tvRefreshButton).isEnabled =
             currentUrl().isNotBlank()
@@ -899,6 +941,7 @@ class BrowserActivity : AppCompatActivity() {
         gecko.visibility = View.VISIBLE
 
         if (!stopped.contains(session)) {
+            session.setPriorityHint(if (resumed) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
             session.setActive(resumed)
             session.setFocused(resumed)
         }
@@ -909,11 +952,15 @@ class BrowserActivity : AppCompatActivity() {
 
         errorCover.visibility = View.GONE
         failures[session]?.let { showError(it.message) }
-
         updateButtons()
+        // Remove the marker before recovery. A failure during this attempt requires Retry.
+        if (resumed && stopped.contains(session) && backgroundDiscards.remove(session)) {
+            recoverCurrentPage()
+        }
     }
 
     private fun showPanel(view: View, name: String) {
+        deferredVisit = null
         downloadUpdate?.let(main::removeCallbacks)
         downloadUpdate = null
 
@@ -927,6 +974,7 @@ class BrowserActivity : AppCompatActivity() {
         updateKeepAwake()
 
         if (!stopped.contains(session)) {
+            session.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
             session.setFocused(false)
             session.setActive(false)
         }
@@ -1110,24 +1158,16 @@ class BrowserActivity : AppCompatActivity() {
             body.addView(row)
         }
 
-        showPanel(
-            ScrollView(this).apply {
-                isFillViewport = true
-                addView(body)
-            },
-            "home"
-        )
-
-        address.setAdapter(
-            ArrayAdapter(
-                this,
-                android.R.layout.simple_dropdown_item_1line,
-                (
-                    all.map { it.first } +
-                        history.entries().take(30).map { it.url }
-                    ).distinct()
-            )
-        )
+        val home = ScrollView(this).apply { isFillViewport = true; addView(body) }
+        showPanel(home, "home")
+        val bookmarks = all.map { it.first }
+        address.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, bookmarks))
+        history.entriesAsync { recent ->
+            if (!closed && panel === home) {
+                address.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line,
+                    (bookmarks + recent.take(30).map { it.url }).distinct()))
+            }
+        }
 
         address.threshold = 1
 
@@ -1138,46 +1178,28 @@ class BrowserActivity : AppCompatActivity() {
 
     private fun showHistory() {
         val body = listBody("History")
-        val items = history.entries()
-
         action(body, "Clear history") {
-            AlertDialog.Builder(this)
-                .setTitle("Clear browsing history?")
+            AlertDialog.Builder(this).setTitle("Clear browsing history?")
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Clear") { _, _ ->
-                    history.clear()
-                    showHistory()
+                .setPositiveButton("Clear") { _, _ -> history.clear(); showHistory() }.show()
+        }
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        rows.addView(label("Loading history…", 18))
+        body.addView(rows)
+        val screen = ScrollView(this).apply { addView(body) }
+        showPanel(screen, "history")
+        history.entriesAsync { items ->
+            if (!closed && panel === screen) {
+                rows.removeAllViews()
+                if (items.isEmpty()) rows.addView(label("No browsing history yet.", 18))
+                items.forEach { item ->
+                    val row = LinearLayout(this)
+                    action(row, "${item.title.ifBlank { item.url }}\n${item.url}", 1f) { load(item.url) }
+                    action(row, "Remove") { history.remove(item.url); showHistory() }
+                    rows.addView(row)
                 }
-                .show()
-        }
-
-        if (items.isEmpty()) {
-            body.addView(label("No browsing history yet.", 18))
-        }
-
-        items.forEach { item ->
-            val row = LinearLayout(this)
-
-            action(
-                row,
-                "${item.title.ifBlank { item.url }}\n${item.url}",
-                1f
-            ) {
-                load(item.url)
             }
-
-            action(row, "Remove") {
-                history.remove(item.url)
-                showHistory()
-            }
-
-            body.addView(row)
         }
-
-        showPanel(
-            ScrollView(this).apply { addView(body) },
-            "history"
-        )
     }
 
     private fun showDownloads() {
@@ -1747,16 +1769,12 @@ class BrowserActivity : AppCompatActivity() {
         super.onResume()
 
         resumed = true
+        pausedForBackground = false
         extensionPermissions.attach()
-
-        if (
-            ::gecko.isInitialized &&
-            panel == null &&
-            !stopped.contains(session)
-        ) {
-            session.setActive(true)
-            session.setFocused(true)
-        }
+        val deferred = deferredVisit
+        deferredVisit = null
+        if (deferred != null) visit(deferred.first, deferred.second)
+        else if (::gecko.isInitialized && panel == null) showPage()
 
         if (panelName == "downloads") showDownloads()
 
@@ -1765,6 +1783,7 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onPause() {
         resumed = false
+        pausedForBackground = true
         extensionPermissions.detach()
 
         root.pausePointer()
@@ -1777,6 +1796,7 @@ class BrowserActivity : AppCompatActivity() {
         playing = false
 
         if (!stopped.contains(session)) {
+            session.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
             session.setFocused(false)
             session.setActive(false)
         }
@@ -1793,6 +1813,29 @@ class BrowserActivity : AppCompatActivity() {
         super.onSaveInstanceState(out)
     }
 
+    /** Only browser panels are discarded here; external file pickers keep their session. */
+    private fun releaseHiddenPage() {
+        if (panel == null || sessions.isEmpty() || stopped.contains(session)) return
+        if (permissionDialogs.isNotEmpty()) return
+        try {
+            // Closing a session must never interrupt a running download.
+            if (downloads.entries().any { it.status in listOf(DownloadManager.STATUS_RUNNING,
+                    DownloadManager.STATUS_PENDING, DownloadManager.STATUS_PAUSED) }) return
+            val current = session
+            stopped.add(current)
+            backgroundDiscards.add(current)
+            current.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
+            current.setFocused(false)
+            current.setActive(false)
+            gecko.releaseSession()
+            if (current.isOpen) current.close()
+            loading = false
+            Log.i(TAG, "Released hidden page after memory warning; restore deferred until visible")
+        } catch (error: Exception) {
+            Log.w(TAG, "Hidden page could not be released", error)
+        }
+    }
+
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
 
@@ -1802,6 +1845,7 @@ class BrowserActivity : AppCompatActivity() {
             level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
         ) {
             releaseBackgroundWindows()
+            releaseHiddenPage()
 
             if (::root.isInitialized && sessions.isNotEmpty()) {
                 updateButtons()
@@ -1812,6 +1856,7 @@ class BrowserActivity : AppCompatActivity() {
     override fun onLowMemory() {
         super.onLowMemory()
         releaseBackgroundWindows()
+        releaseHiddenPage()
 
         if (::root.isInitialized && sessions.isNotEmpty()) {
             updateButtons()
@@ -1820,6 +1865,7 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         closed = true
+        deferredVisit = null
         main.removeCallbacksAndMessages(null)
         prompts.close()
 
