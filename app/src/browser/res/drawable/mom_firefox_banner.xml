@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#101427" />
+        </shape>
+    </item>
+
+    <item
+        android:width="128dp"
+        android:height="128dp"
+        android:left="12dp"
+        android:gravity="left|center_vertical"
+        android:drawable="@drawable/mom_firefox_icon" />
+
+    <item android:drawable="@drawable/mom_firefox_wordmark" />
+
+</layer-list>
