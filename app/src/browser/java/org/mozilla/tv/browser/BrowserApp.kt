@@ -5,9 +5,11 @@ import android.app.Application
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
+import org.mozilla.geckoview.GeckoWebExecutor
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -36,6 +38,8 @@ class BrowserApp : Application() {
 
     companion object {
         private var runtime: GeckoRuntime? = null
+        private var executor: GeckoWebExecutor? = null
+        private var lastSearchConnect = -30000L
 
         @JvmStatic
         fun getRuntime(context: Context): GeckoRuntime {
@@ -60,6 +64,22 @@ class BrowserApp : Application() {
                         Log.e("TVBrowser", "TV video controls could not load", error)
                     }
                 )
+            }
+        }
+
+        /** A connection only: no results page, query, or extra browser session is loaded. */
+        fun prepareSearchConnection(context: Context) {
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastSearchConnect < 30000) return
+            lastSearchConnect = now
+            try {
+                val memory = ActivityManager.MemoryInfo()
+                context.getSystemService(ActivityManager::class.java).getMemoryInfo(memory)
+                if (memory.lowMemory) return
+                val web = executor ?: GeckoWebExecutor(getRuntime(context)).also { executor = it }
+                web.speculativeConnect("https://www.google.com")
+            } catch (error: Exception) {
+                Log.d("TVBrowser", "Search connection preparation skipped", error)
             }
         }
 
