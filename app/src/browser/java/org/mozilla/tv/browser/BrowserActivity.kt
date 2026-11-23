@@ -18,6 +18,7 @@ import android.text.Html
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -57,8 +58,10 @@ class BrowserActivity : AppCompatActivity() {
     private lateinit var errorCover: LinearLayout
     private lateinit var history: HistoryStore
     private lateinit var downloads: DownloadsStore
+
     private val sessions = mutableListOf<GeckoSession>()
     private val session get() = sessions.last()
+
     private val urls = mutableMapOf<GeckoSession, String>()
     private val committedUrls = mutableMapOf<GeckoSession, String>()
     private val titles = mutableMapOf<GeckoSession, String>()
@@ -66,10 +69,15 @@ class BrowserActivity : AppCompatActivity() {
     private val forward = mutableMapOf<GeckoSession, Boolean>()
     private val media = mutableMapOf<GeckoSession, MediaSession>()
     private val stopped = mutableSetOf<GeckoSession>()
+
     private data class PageFailure(val url: String, val message: String)
+
     private val failures = mutableMapOf<GeckoSession, PageFailure>()
-    private val prefs by lazy { getSharedPreferences("tv-browser", MODE_PRIVATE) }
+    private val prefs by lazy {
+        getSharedPreferences("tv-browser", MODE_PRIVATE)
+    }
     private val runtime get() = BrowserApp.getRuntime(this)
+
     private var panel: View? = null
     private var panelName = "home"
     private var fullscreen = false
@@ -79,6 +87,7 @@ class BrowserActivity : AppCompatActivity() {
     private var loading = false
     private var closed = false
     private var downloadUpdate: Runnable? = null
+
     private val main = Handler(Looper.getMainLooper())
     private val keys = RemoteKeyRouter<KeyEvent>()
     private val hold = FullscreenPointerGesture()
@@ -90,15 +99,19 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+
         window.setFlags(
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         )
+
         setContentView(R.layout.activity_main)
+
         root = findViewById(R.id.rootView)
         toolbar = findViewById(R.id.tvToolbar)
         container = findViewById(R.id.container)
         address = findViewById(R.id.tvAddressInput)
+
         history = HistoryStore(this)
         downloads = DownloadsStore(this)
 
@@ -111,6 +124,7 @@ class BrowserActivity : AppCompatActivity() {
             android.R.attr.progressBarStyleHorizontal
         )
         progress.max = 100
+
         container.addView(
             progress,
             FrameLayout.LayoutParams(-1, dp(3), Gravity.TOP)
@@ -120,6 +134,7 @@ class BrowserActivity : AppCompatActivity() {
         errorView = label("", 16).apply {
             textSize = 22f
         }
+
         errorCover = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -132,6 +147,7 @@ class BrowserActivity : AppCompatActivity() {
             action(controls, "Home") { showHome() }
             addView(controls)
         }
+
         container.addView(errorCover, FrameLayout.LayoutParams(-1, -1))
         errorCover.visibility = View.GONE
 
@@ -141,6 +157,7 @@ class BrowserActivity : AppCompatActivity() {
         root.scrollPage = { x, y, dx, dy ->
             val origin = IntArray(2)
             val rootOrigin = IntArray(2)
+
             gecko.getLocationInWindow(origin)
             root.getLocationInWindow(rootOrigin)
 
@@ -171,28 +188,36 @@ class BrowserActivity : AppCompatActivity() {
         findViewById<View>(R.id.tvHomeButton).setOnClickListener {
             showHome()
         }
+
         findViewById<View>(R.id.tvBookmarkButton).setOnClickListener {
             toggleBookmark()
         }
+
         findViewById<View>(R.id.tvDownloadsButton).setOnClickListener {
             showDownloads()
         }
+
         findViewById<View>(R.id.tvHistoryButton).setOnClickListener {
             showHistory()
         }
+
         findViewById<View>(R.id.tvSettingsButton).setOnClickListener {
             showSettings()
         }
+
         findViewById<View>(R.id.tvBackButton).setOnClickListener {
             navigateBack()
         }
+
         findViewById<View>(R.id.tvForwardButton).setOnClickListener {
             showPage()
             if (forward[session] == true) session.goForward()
         }
+
         findViewById<View>(R.id.tvRefreshButton).setOnClickListener {
             retry()
         }
+
         findViewById<View>(R.id.tvAddressGoButton).setOnClickListener {
             submitAddress()
         }
@@ -212,30 +237,54 @@ class BrowserActivity : AppCompatActivity() {
             }
         }
 
-        address.setOnClickListener { openKeyboard() }
-        address.setOnItemClickListener { _, _, _, _ -> submitAddress() }
+        address.setOnClickListener {
+            openKeyboard()
+        }
 
-        findViewById<View>(R.id.tvToolbarButtonRow)
-            .addOnLayoutChangeListener {
-                    row, left, _, right, _, _, _, _, _ ->
-                val available = (row.parent as View).width - dp(24)
-                val width = (right - left).coerceAtMost(available)
-                val addressRow = findViewById<View>(R.id.tvAddressRow)
+        address.setSelectAllOnFocus(true)
 
-                if (width > 0 && addressRow.layoutParams.width != width) {
-                    addressRow.layoutParams =
-                        addressRow.layoutParams.apply {
-                            this.width = width
-                        }
+        address.setOnFocusChangeListener { _, focused ->
+            if (focused) {
+                address.post {
+                    if (address.hasFocus()) address.selectAll()
                 }
             }
+        }
+
+        address.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_UP) {
+                address.post {
+                    if (address.hasFocus()) address.selectAll()
+                }
+            }
+            false
+        }
+
+        address.setOnItemClickListener { _, _, _, _ ->
+            submitAddress()
+        }
+
+        findViewById<View>(R.id.tvToolbarButtonRow).addOnLayoutChangeListener {
+                row, left, _, right, _, _, _, _, _ ->
+            val available = (row.parent as View).width - dp(24)
+            val width = (right - left).coerceAtMost(available)
+            val addressRow = findViewById<View>(R.id.tvAddressRow)
+
+            if (width > 0 && addressRow.layoutParams.width != width) {
+                addressRow.layoutParams = addressRow.layoutParams.apply {
+                    this.width = width
+                }
+            }
+        }
 
         val saved = state?.getString("page")
+
         if (!saved.isNullOrBlank()) {
             load(saved)
         } else if (!handleIntent(intent)) {
             showHome()
         }
+
         updateButtons()
     }
 
@@ -245,18 +294,12 @@ class BrowserActivity : AppCompatActivity() {
         val s = GeckoSession(
             GeckoSessionSettings.Builder()
                 .userAgentMode(
-                    if (desktop) {
-                        GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
-                    } else {
-                        GeckoSessionSettings.USER_AGENT_MODE_MOBILE
-                    }
+                    if (desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+                    else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
                 )
                 .viewportMode(
-                    if (desktop) {
-                        GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
-                    } else {
-                        GeckoSessionSettings.VIEWPORT_MODE_MOBILE
-                    }
+                    if (desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
+                    else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
                 )
                 .suspendMediaWhenInactive(true)
                 .build()
@@ -271,81 +314,49 @@ class BrowserActivity : AppCompatActivity() {
             ): GeckoResult<AllowOrDeny> {
                 if (
                     request.target ==
-                    GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW &&
-                    (
-                        !request.hasUserGesture ||
-                        s != sessions.lastOrNull() ||
-                        panel != null ||
-                        sessions.size >= MAX_WINDOWS
-                    )
+                    GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW
                 ) {
-                    Log.i(
-                        TAG,
-                        "Blocked new window; retained=${sessions.size}"
-                    )
-                    if (
-                        request.hasUserGesture &&
-                        panel == null &&
-                        sessions.size >= MAX_WINDOWS
-                    ) {
-                        toast(
-                            "Use Back to close this child window " +
-                                "before opening another."
-                        )
-                    }
+                    Log.i(TAG, "Blocked website popup")
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
 
                 val scheme = Uri.parse(request.uri).scheme?.lowercase()
 
                 if (ExtensionsActivity.isXpiUrl(request.uri)) {
-                    if (
-                        request.hasUserGesture ||
-                        request.isDirectNavigation
-                    ) {
+                    if (request.hasUserGesture || request.isDirectNavigation) {
                         ExtensionsActivity.openInstaller(
                             this@BrowserActivity,
                             request.uri
                         )
                     }
+
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
 
                 if (
                     scheme in listOf(
-                        "http",
-                        "https",
-                        "about",
-                        "data",
-                        "blob",
-                        "moz-extension"
+                        "http", "https", "about", "data", "blob", "moz-extension"
                     )
                 ) {
                     return GeckoResult.fromValue(AllowOrDeny.ALLOW)
                 }
 
                 if (request.hasUserGesture) externalLink(request.uri)
+
                 return GeckoResult.fromValue(AllowOrDeny.DENY)
             }
 
             override fun onLocationChange(
                 s: GeckoSession,
                 url: String?,
-                permissions: MutableList<
-                    GeckoSession.PermissionDelegate.ContentPermission
-                >,
+                permissions: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean
             ) {
                 if (closed || !sessions.contains(s)) return
-
-                if (
-                    failures.containsKey(s) &&
-                    isErrorDocument(url.orEmpty())
-                ) {
-                    return
-                }
+                if (failures.containsKey(s) && isErrorDocument(url.orEmpty())) return
 
                 if (committedUrls[s] != url) titles.remove(s)
+
                 committedUrls[s] = url.orEmpty()
                 urls[s] = url.orEmpty()
 
@@ -355,18 +366,12 @@ class BrowserActivity : AppCompatActivity() {
                 }
             }
 
-            override fun onCanGoBack(
-                s: GeckoSession,
-                value: Boolean
-            ) {
+            override fun onCanGoBack(s: GeckoSession, value: Boolean) {
                 back[s] = value
                 if (s == session) updateButtons()
             }
 
-            override fun onCanGoForward(
-                s: GeckoSession,
-                value: Boolean
-            ) {
+            override fun onCanGoForward(s: GeckoSession, value: Boolean) {
                 forward[s] = value
                 if (s == session) updateButtons()
             }
@@ -380,20 +385,18 @@ class BrowserActivity : AppCompatActivity() {
 
                 Log.e(
                     TAG,
-                    "Load failed category=${error.category} " +
-                        "code=${error.code}"
+                    "Load failed category=${error.category} code=${error.code}"
                 )
 
                 val message = when (error.code) {
                     WebRequestError.ERROR_SECURITY_BAD_CERT,
                     WebRequestError.ERROR_BAD_HSTS_CERT ->
                         "This website's certificate could not be verified. " +
-                            "Check the TV's date and time. If those are " +
-                            "correct, the website may need to fix its certificate."
+                            "Check the TV's date and time. " +
+                            "If those are correct, the website may need to fix its certificate."
 
                     WebRequestError.ERROR_SECURITY_SSL ->
-                        "A secure connection could not be established " +
-                            "with this website."
+                        "A secure connection could not be established with this website."
 
                     WebRequestError.ERROR_UNKNOWN_HOST ->
                         "The website address could not be found. " +
@@ -416,12 +419,10 @@ class BrowserActivity : AppCompatActivity() {
 
                 if (s == session) showError(message)
 
-                // Explicit error document instead of an unexplained blank page.
+                // Never leave an unexplained blank Gecko page.
                 val html =
-                    "<!doctype html>" +
-                        "<meta name=viewport content='width=device-width'>" +
-                        "<h1>Page could not load</h1>" +
-                        "<p>${Html.escapeHtml(message)}</p>"
+                    "<!doctype html><meta name=viewport content='width=device-width'>" +
+                        "<h1>Page could not load</h1><p>${Html.escapeHtml(message)}</p>"
 
                 return GeckoResult.fromValue(
                     "data:text/html;charset=utf-8," + Uri.encode(html)
@@ -432,68 +433,16 @@ class BrowserActivity : AppCompatActivity() {
                 s: GeckoSession,
                 uri: String
             ): GeckoResult<GeckoSession>? {
-                if (
-                    closed ||
-                    s != sessions.lastOrNull() ||
-                    panel != null ||
-                    sessions.size >= MAX_WINDOWS
-                ) {
-                    return null
-                }
-
-                val child = makeSession()
-                urls[child] = uri
-
-                // Reserve the slot before returning.
-                media[s]?.pause()
-                s.setFocused(false)
-                s.setActive(false)
-                sessions.add(child)
-
-                Log.i(
-                    TAG,
-                    "Opened child window; retained=${sessions.size}"
-                )
-
-                // Gecko opens the returned session. Never call open() here.
-                main.post {
-                    if (
-                        !closed &&
-                        panel == null &&
-                        sessions.lastOrNull() == child
-                    ) {
-                        setLoading(false)
-                        attachCurrent()
-                        showPage()
-                    } else {
-                        val removed = sessions.remove(child)
-                        disposeSession(child)
-
-                        if (
-                            !closed &&
-                            removed &&
-                            sessions.isNotEmpty()
-                        ) {
-                            attachCurrent()
-                        }
-                    }
-                }
-
-                return GeckoResult.fromValue(child)
+                Log.i(TAG, "Blocked website new-session request")
+                return null
             }
         }
 
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
-            override fun onPageStart(
-                s: GeckoSession,
-                url: String
-            ) {
+            override fun onPageStart(s: GeckoSession, url: String) {
                 if (closed || !sessions.contains(s)) return
 
-                if (
-                    failures.containsKey(s) &&
-                    isErrorDocument(url)
-                ) {
+                if (failures.containsKey(s) && isErrorDocument(url)) {
                     if (s == session) {
                         showError(failures.getValue(s).message)
                     }
@@ -511,17 +460,11 @@ class BrowserActivity : AppCompatActivity() {
                 Log.i(TAG, "Page start host=${Uri.parse(url).host}")
             }
 
-            override fun onProgressChange(
-                s: GeckoSession,
-                value: Int
-            ) {
+            override fun onProgressChange(s: GeckoSession, value: Int) {
                 if (s == session) progress.progress = value
             }
 
-            override fun onPageStop(
-                s: GeckoSession,
-                success: Boolean
-            ) {
+            override fun onPageStop(s: GeckoSession, success: Boolean) {
                 if (closed || !sessions.contains(s)) return
 
                 if (success && !failures.containsKey(s)) {
@@ -542,24 +485,15 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         s.contentDelegate = object : GeckoSession.ContentDelegate {
-            override fun onTitleChange(
-                s: GeckoSession,
-                title: String?
-            ) {
+            override fun onTitleChange(s: GeckoSession, title: String?) {
                 if (closed || !sessions.contains(s)) return
                 if (failures.containsKey(s)) return
 
                 titles[s] = title.orEmpty()
-                history.updateTitle(
-                    urls[s].orEmpty(),
-                    title.orEmpty()
-                )
+                history.updateTitle(urls[s].orEmpty(), title.orEmpty())
             }
 
-            override fun onFullScreen(
-                s: GeckoSession,
-                value: Boolean
-            ) {
+            override fun onFullScreen(s: GeckoSession, value: Boolean) {
                 if (s == session) setFullscreen(value)
             }
 
@@ -606,12 +540,10 @@ class BrowserActivity : AppCompatActivity() {
                     }?.value
 
                 if (
-                    ExtensionsActivity.isExtensionResponse(
-                        response.uri,
-                        mime
-                    )
+                    ExtensionsActivity.isExtensionResponse(response.uri, mime)
                 ) {
                     DownloadsStore.closeBody(response)
+
                     ExtensionsActivity.openInstaller(
                         this@BrowserActivity,
                         response.uri
@@ -663,7 +595,8 @@ class BrowserActivity : AppCompatActivity() {
                     GeckoSession.PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS ->
                         "connect to devices on your local network"
 
-                    else -> return GeckoResult.fromValue(denied)
+                    else ->
+                        return GeckoResult.fromValue(denied)
                 }
 
                 val result = GeckoResult<Int>()
@@ -700,41 +633,33 @@ class BrowserActivity : AppCompatActivity() {
                 permissionDialogs[dialog] = {
                     answer(denied)
                 }
+
                 dialog.setOnDismissListener {
                     answer(denied)
                 }
+
                 dialog.show()
-                dialog.getButton(
-                    AlertDialog.BUTTON_NEGATIVE
-                ).requestFocus()
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus()
 
                 return result
             }
         }
 
         s.mediaSessionDelegate = object : MediaSession.Delegate {
-            override fun onActivated(
-                s: GeckoSession,
-                m: MediaSession
-            ) {
+            override fun onActivated(s: GeckoSession, m: MediaSession) {
                 media[s] = m
             }
 
-            override fun onDeactivated(
-                s: GeckoSession,
-                m: MediaSession
-            ) {
+            override fun onDeactivated(s: GeckoSession, m: MediaSession) {
                 media.remove(s)
+
                 if (s == session) {
                     playing = false
                     updateKeepAwake()
                 }
             }
 
-            override fun onPlay(
-                s: GeckoSession,
-                m: MediaSession
-            ) {
+            override fun onPlay(s: GeckoSession, m: MediaSession) {
                 if (s == session && resumed && panel == null) {
                     playing = true
                     updateKeepAwake()
@@ -743,20 +668,14 @@ class BrowserActivity : AppCompatActivity() {
                 }
             }
 
-            override fun onPause(
-                s: GeckoSession,
-                m: MediaSession
-            ) {
+            override fun onPause(s: GeckoSession, m: MediaSession) {
                 if (s == session) {
                     playing = false
                     updateKeepAwake()
                 }
             }
 
-            override fun onStop(
-                s: GeckoSession,
-                m: MediaSession
-            ) {
+            override fun onStop(s: GeckoSession, m: MediaSession) {
                 onPause(s, m)
             }
         }
@@ -780,18 +699,21 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     private fun load(url: String) {
-        // Address, bookmark, and history selections start a top-level visit.
+        // An address, bookmark, or history selection starts a fresh visit.
         releaseBackgroundWindows()
 
         if (stopped.contains(session)) replaceStopped()
+
         failures.remove(session)
         urls[session] = url
 
         hideKeyboard()
         showPage()
         setLoading(true)
+
         address.setText(url, false)
         gecko.requestFocus()
+
         session.loadUri(url)
     }
 
@@ -817,14 +739,12 @@ class BrowserActivity : AppCompatActivity() {
         updateButtons()
     }
 
-    private fun failed(
-        s: GeckoSession,
-        message: String
-    ) {
+    private fun failed(s: GeckoSession, message: String) {
         if (!sessions.contains(s)) return
 
         stopped.add(s)
         failures[s] = PageFailure(urls[s].orEmpty(), message)
+
         Log.e(TAG, message)
 
         try {
@@ -833,7 +753,8 @@ class BrowserActivity : AppCompatActivity() {
                     "Host: ${Uri.parse(urls[s].orEmpty()).host}\n" +
                     "Retained windows: ${sessions.size}\n"
             )
-        } catch (_: Exception) { }
+        } catch (_: Exception) {
+        }
 
         if (s == session) {
             setFullscreen(false)
@@ -851,6 +772,7 @@ class BrowserActivity : AppCompatActivity() {
         sessions.removeAt(sessions.lastIndex)
 
         if (old.isOpen) old.close()
+
         forget(old)
 
         sessions.add(
@@ -859,6 +781,7 @@ class BrowserActivity : AppCompatActivity() {
                 urls[it] = url
             }
         )
+
         gecko.setSession(session)
     }
 
@@ -893,10 +816,7 @@ class BrowserActivity : AppCompatActivity() {
         previous.forEach(::disposeSession)
 
         if (previous.isNotEmpty()) {
-            Log.i(
-                TAG,
-                "Released ${previous.size} background window(s)"
-            )
+            Log.i(TAG, "Released ${previous.size} background window(s)")
         }
     }
 
@@ -908,6 +828,7 @@ class BrowserActivity : AppCompatActivity() {
         disposeSession(child)
 
         gecko.setSession(session)
+
         showPage()
         updateAddress()
         updateButtons()
@@ -919,23 +840,28 @@ class BrowserActivity : AppCompatActivity() {
         if (value) {
             progress.progress = 0
             errorCover.visibility = View.GONE
+
             if (panel == null) gecko.visibility = View.VISIBLE
         }
 
         progress.visibility =
-            if (value && panel == null) View.VISIBLE else View.GONE
+            if (value && panel == null) View.VISIBLE
+            else View.GONE
     }
 
     private fun showError(message: String) {
         setLoading(false)
+
         playing = false
         updateKeepAwake()
 
         errorView.text = message
         errorCover.visibility =
-            if (panel == null) View.VISIBLE else View.GONE
+            if (panel == null) View.VISIBLE
+            else View.GONE
 
         if (panel == null) gecko.visibility = View.INVISIBLE
+
         updateAddress()
     }
 
@@ -958,11 +884,8 @@ class BrowserActivity : AppCompatActivity() {
             currentUrl().isNotBlank()
 
         findViewById<Button>(R.id.tvBookmarkButton).text =
-            if (bookmarks().any { it.first == currentUrl() }) {
-                "Bookmarked"
-            } else {
-                "Bookmark"
-            }
+            if (bookmarks().any { it.first == currentUrl() }) "Bookmarked"
+            else "Bookmark"
     }
 
     private fun showPage() {
@@ -972,6 +895,7 @@ class BrowserActivity : AppCompatActivity() {
         panel?.let(container::removeView)
         panel = null
         panelName = "page"
+
         gecko.visibility = View.VISIBLE
 
         if (!stopped.contains(session)) {
@@ -980,17 +904,16 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         progress.visibility =
-            if (loading) View.VISIBLE else View.GONE
+            if (loading) View.VISIBLE
+            else View.GONE
 
         errorCover.visibility = View.GONE
         failures[session]?.let { showError(it.message) }
+
         updateButtons()
     }
 
-    private fun showPanel(
-        view: View,
-        name: String
-    ) {
+    private fun showPanel(view: View, name: String) {
         downloadUpdate?.let(main::removeCallbacks)
         downloadUpdate = null
 
@@ -1013,13 +936,11 @@ class BrowserActivity : AppCompatActivity() {
         errorCover.visibility = View.GONE
 
         panel?.let(container::removeView)
+
         panel = view
         panelName = name
 
-        container.addView(
-            view,
-            FrameLayout.LayoutParams(-1, -1)
-        )
+        container.addView(view, FrameLayout.LayoutParams(-1, -1))
         updateButtons()
     }
 
@@ -1032,18 +953,14 @@ class BrowserActivity : AppCompatActivity() {
 
         return (0 until array.length()).mapNotNull {
             array.optJSONObject(it)?.let { item ->
-                item.optString("url")
-                    .takeIf(String::isNotBlank)
-                    ?.let { url ->
-                        url to item.optString("title", url)
-                    }
+                item.optString("url").takeIf(String::isNotBlank)?.let { url ->
+                    url to item.optString("title", url)
+                }
             }
         }
     }
 
-    private fun saveBookmarks(
-        items: List<Pair<String, String>>
-    ) {
+    private fun saveBookmarks(items: List<Pair<String, String>>) {
         val array = JSONArray()
 
         items.forEach {
@@ -1054,10 +971,7 @@ class BrowserActivity : AppCompatActivity() {
             )
         }
 
-        prefs.edit()
-            .putString("bookmarks", array.toString())
-            .apply()
-
+        prefs.edit().putString("bookmarks", array.toString()).apply()
         updateButtons()
     }
 
@@ -1076,6 +990,7 @@ class BrowserActivity : AppCompatActivity() {
                 .setTitle("Remove bookmark?")
                 .setPositiveButton("Remove") { _, _ ->
                     saveBookmarks(all.filterNot { it.first == url })
+
                     if (panelName == "home") showHome()
                 }
                 .setNegativeButton("Cancel", null)
@@ -1083,11 +998,11 @@ class BrowserActivity : AppCompatActivity() {
         } else {
             saveBookmarks(
                 all + (
-                    url to titles[session].orEmpty().ifBlank {
-                        Uri.parse(url).host ?: url
-                    }
-                )
+                    url to titles[session].orEmpty()
+                        .ifBlank { Uri.parse(url).host ?: url }
+                    )
             )
+
             toast("Bookmark saved")
         }
     }
@@ -1108,6 +1023,7 @@ class BrowserActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
             }
         )
+
         body.addView(
             label(
                 getString(R.string.tv_saved_sites),
@@ -1115,6 +1031,7 @@ class BrowserActivity : AppCompatActivity() {
                 Color.DKGRAY
             )
         )
+
         body.addView(
             label(
                 getString(R.string.tv_saved_sites_hint),
@@ -1139,8 +1056,8 @@ class BrowserActivity : AppCompatActivity() {
             (
                 resources.displayMetrics.widthPixels /
                     resources.displayMetrics.density - 64
-            ) / 180
-        ).toInt().coerceIn(2, 6)
+                ) / 180
+            ).toInt().coerceIn(2, 6)
 
         all.chunked(columns).forEach { group ->
             val row = LinearLayout(this)
@@ -1157,37 +1074,28 @@ class BrowserActivity : AppCompatActivity() {
                     setOnClickListener {
                         load(url)
                     }
+
                     setOnLongClickListener {
                         AlertDialog.Builder(this@BrowserActivity)
                             .setTitle(title)
                             .setMessage("Remove this bookmark?")
                             .setPositiveButton("Remove") { _, _ ->
                                 saveBookmarks(
-                                    bookmarks().filterNot {
-                                        it.first == url
-                                    }
+                                    bookmarks().filterNot { it.first == url }
                                 )
                                 showHome()
                             }
                             .setNegativeButton("Cancel", null)
                             .show()
+
                         true
                     }
                 }
 
                 row.addView(
                     button,
-                    LinearLayout.LayoutParams(
-                        0,
-                        dp(156),
-                        1f
-                    ).apply {
-                        setMargins(
-                            dp(6),
-                            dp(10),
-                            dp(6),
-                            dp(6)
-                        )
+                    LinearLayout.LayoutParams(0, dp(156), 1f).apply {
+                        setMargins(dp(6), dp(10), dp(6), dp(6))
                     }
                 )
             }
@@ -1217,12 +1125,13 @@ class BrowserActivity : AppCompatActivity() {
                 (
                     all.map { it.first } +
                         history.entries().take(30).map { it.url }
-                ).distinct()
+                    ).distinct()
             )
         )
+
         address.threshold = 1
 
-        // Keep the remote pointer available until the address field is selected.
+        // Keep the pointer available until the address field is selected.
         address.clearFocus()
         findViewById<View>(R.id.tvHomeButton).requestFocus()
     }
@@ -1256,6 +1165,7 @@ class BrowserActivity : AppCompatActivity() {
             ) {
                 load(item.url)
             }
+
             action(row, "Remove") {
                 history.remove(item.url)
                 showHistory()
@@ -1272,37 +1182,25 @@ class BrowserActivity : AppCompatActivity() {
 
     private fun showDownloads() {
         val body = listBody("Downloads")
-        val rows =
-            linkedMapOf<Long, Pair<LinearLayout, TextView>>()
+        val rows = linkedMapOf<Long, Pair<LinearLayout, TextView>>()
 
         fun update() {
             val entries = downloads.entries()
             val ids = entries.map { it.id }.toSet()
 
-            rows.keys.filterNot { it in ids }
-                .toList()
-                .forEach { id ->
-                    body.removeView(rows.remove(id)?.first)
-                }
+            rows.keys.filterNot { it in ids }.toList().forEach { id ->
+                body.removeView(rows.remove(id)?.first)
+            }
 
             entries.forEach { entry ->
                 val status = when (entry.status) {
-                    DownloadManager.STATUS_SUCCESSFUL ->
-                        "Complete"
-
-                    DownloadManager.STATUS_FAILED ->
-                        "Failed / interrupted"
-
-                    else ->
-                        "Downloading"
+                    DownloadManager.STATUS_SUCCESSFUL -> "Complete"
+                    DownloadManager.STATUS_FAILED -> "Failed / interrupted"
+                    else -> "Downloading"
                 }
 
                 val text = "$status · ${entry.downloaded} bytes" +
-                    if (entry.total > 0) {
-                        " / ${entry.total}"
-                    } else {
-                        ""
-                    }
+                    if (entry.total > 0) " / ${entry.total}" else ""
 
                 val existing = rows[entry.id]
 
@@ -1312,6 +1210,7 @@ class BrowserActivity : AppCompatActivity() {
                     val row = LinearLayout(this).apply {
                         orientation = LinearLayout.VERTICAL
                     }
+
                     row.addView(label(entry.title, 20))
 
                     val detail = label(text, 15)
@@ -1321,9 +1220,7 @@ class BrowserActivity : AppCompatActivity() {
 
                     action(controls, "Open") {
                         val fresh = downloads.entries()
-                            .firstOrNull {
-                                it.id == entry.id
-                            }
+                            .firstOrNull { it.id == entry.id }
 
                         if (
                             fresh?.status ==
@@ -1337,9 +1234,7 @@ class BrowserActivity : AppCompatActivity() {
 
                     action(controls, "Cancel / delete") {
                         AlertDialog.Builder(this)
-                            .setTitle(
-                                "Cancel or delete this download?"
-                            )
+                            .setTitle("Cancel or delete this download?")
                             .setMessage(entry.title)
                             .setNegativeButton("Keep", null)
                             .setPositiveButton("Delete") { _, _ ->
@@ -1369,11 +1264,7 @@ class BrowserActivity : AppCompatActivity() {
 
         downloadUpdate = object : Runnable {
             override fun run() {
-                if (
-                    !closed &&
-                    panelName == "downloads" &&
-                    resumed
-                ) {
+                if (!closed && panelName == "downloads" && resumed) {
                     update()
                     main.postDelayed(this, 1000)
                 }
@@ -1390,23 +1281,17 @@ class BrowserActivity : AppCompatActivity() {
             false
         )
 
-        settings.findViewById<View>(
-            R.id.extensionsButton
-        ).setOnClickListener {
-            startActivity(
-                Intent(this, ExtensionsActivity::class.java)
-            )
-        }
+        settings.findViewById<View>(R.id.extensionsButton)
+            .setOnClickListener {
+                startActivity(Intent(this, ExtensionsActivity::class.java))
+            }
 
-        settings.findViewById<View>(
-            R.id.playbackDiagnosticsButton
-        ).setOnClickListener {
-            showDiagnostics()
-        }
+        settings.findViewById<View>(R.id.playbackDiagnosticsButton)
+            .setOnClickListener {
+                showDiagnostics()
+            }
 
-        val desktop = settings.findViewById<CheckBox>(
-            R.id.telemetryButton
-        )
+        val desktop = settings.findViewById<CheckBox>(R.id.telemetryButton)
         desktop.isChecked = prefs.getBoolean("desktop", false)
 
         desktop.setOnCheckedChangeListener { _, value ->
@@ -1414,18 +1299,12 @@ class BrowserActivity : AppCompatActivity() {
 
             sessions.forEach {
                 it.settings.userAgentMode =
-                    if (value) {
-                        GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
-                    } else {
-                        GeckoSessionSettings.USER_AGENT_MODE_MOBILE
-                    }
+                    if (value) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+                    else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
 
                 it.settings.viewportMode =
-                    if (value) {
-                        GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
-                    } else {
-                        GeckoSessionSettings.VIEWPORT_MODE_MOBILE
-                    }
+                    if (value) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
+                    else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
             }
 
             if (
@@ -1436,76 +1315,63 @@ class BrowserActivity : AppCompatActivity() {
             }
         }
 
-        settings.findViewById<View>(
-            R.id.telemetryView
-        ).setOnClickListener {
-            desktop.toggle()
-        }
+        settings.findViewById<View>(R.id.telemetryView)
+            .setOnClickListener {
+                desktop.toggle()
+            }
 
-        settings.findViewById<ImageView>(
-            R.id.ic_lock
-        ).setImageResource(R.drawable.ic_lock)
+        settings.findViewById<ImageView>(R.id.ic_lock)
+            .setImageResource(R.drawable.ic_lock)
 
-        settings.findViewById<View>(
-            R.id.aboutButton
-        ).setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle(getString(R.string.app_name))
-                .setMessage(
-                    "Version ${BuildConfig.VERSION_NAME}\n" +
-                        "GeckoView 159\n\n" +
-                        "TV browser interface with Mozilla GeckoView.\n" +
-                        "Source and license notices are included " +
-                        "with the project; Firefox TV source is " +
-                        "available under Mozilla Public License 2.0."
-                )
-                .setPositiveButton("OK", null)
-                .show()
-        }
+        settings.findViewById<View>(R.id.aboutButton)
+            .setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.app_name))
+                    .setMessage(
+                        "Version ${BuildConfig.VERSION_NAME}\nGeckoView 159\n\n" +
+                            "TV browser interface with Mozilla GeckoView.\n" +
+                            "Source and license notices are included with the project; " +
+                            "Firefox TV source is available under Mozilla Public License 2.0."
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
 
-        settings.findViewById<View>(
-            R.id.privacyNoticeButton
-        ).setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("Privacy")
-                .setMessage(
-                    "Bookmarks, history, downloads, cookies, and " +
-                        "saved crash details are stored on this TV. " +
-                        "This app does not send its crash details " +
-                        "automatically. Websites and installed " +
-                        "extensions have their own privacy policies."
-                )
-                .setNeutralButton("GeckoView privacy") { _, _ ->
-                    load("https://www.mozilla.org/privacy/firefox/")
-                }
-                .setPositiveButton("OK", null)
-                .show()
-        }
+        settings.findViewById<View>(R.id.privacyNoticeButton)
+            .setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle("Privacy")
+                    .setMessage(
+                        "Bookmarks, history, downloads, cookies, and saved crash details are stored " +
+                            "on this TV. This app does not send its crash details automatically. " +
+                            "Websites and installed extensions have their own privacy policies."
+                    )
+                    .setNeutralButton("GeckoView privacy") { _, _ ->
+                        load("https://www.mozilla.org/privacy/firefox/")
+                    }
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
 
-        settings.findViewById<View>(
-            R.id.deleteButton
-        ).setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("Clear cookies and website data?")
-                .setMessage(
-                    "This signs you out of websites. " +
-                        "Bookmarks, history, and downloaded files are kept."
-                )
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Clear") { _, _ ->
-                    runtime.storageController
-                        .clearData(StorageController.ClearFlags.ALL)
-                        .accept(
-                            {
-                                toast("Website data cleared.")
-                            },
-                            {
-                                toast("Could not clear website data.")
-                            }
-                        )
-                }
-                .show()
-        }
+        settings.findViewById<View>(R.id.deleteButton)
+            .setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle("Clear cookies and website data?")
+                    .setMessage(
+                        "This signs you out of websites. " +
+                            "Bookmarks, history, and downloaded files are kept."
+                    )
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Clear") { _, _ ->
+                        runtime.storageController
+                            .clearData(StorageController.ClearFlags.ALL)
+                            .accept(
+                                { toast("Website data cleared.") },
+                                { toast("Could not clear website data.") }
+                            )
+                    }
+                    .show()
+            }
 
         showPanel(settings, "settings")
     }
@@ -1520,11 +1386,9 @@ class BrowserActivity : AppCompatActivity() {
         action(body, "Copy report") {
             getSystemService(ClipboardManager::class.java)
                 .setPrimaryClip(
-                    ClipData.newPlainText(
-                        "TV browser diagnostics",
-                        text
-                    )
+                    ClipData.newPlainText("TV browser diagnostics", text)
                 )
+
             toast("Report copied.")
         }
 
@@ -1543,15 +1407,10 @@ class BrowserActivity : AppCompatActivity() {
         WORKER.execute {
             text = try {
                 val memory = ActivityManager.MemoryInfo()
-                val manager = getSystemService(
-                    ActivityManager::class.java
-                )
+                val manager = getSystemService(ActivityManager::class.java)
                 manager.getMemoryInfo(memory)
 
-                val saved = File(
-                    filesDir,
-                    "last-content-failure.txt"
-                )
+                val saved = File(filesDir, "last-content-failure.txt")
 
                 "Retained browser windows: $retained / $MAX_WINDOWS\n" +
                     "Stopped windows: $stoppedCount\n" +
@@ -1560,12 +1419,9 @@ class BrowserActivity : AppCompatActivity() {
                     "Total RAM: ${memory.totalMem / 1048576} MiB\n\n" +
                     "Last website-process failure:\n" +
                     (
-                        if (saved.isFile) {
-                            saved.readText().take(2000)
-                        } else {
-                            "None recorded.\n"
-                        }
-                    ) +
+                        if (saved.isFile) saved.readText().take(2000)
+                        else "None recorded.\n"
+                        ) +
                     "\n" +
                     BrowserApp.crashReport(applicationContext) +
                     "\n\n" +
@@ -1587,30 +1443,19 @@ class BrowserActivity : AppCompatActivity() {
                 setFullscreen(false)
             }
 
-            panel != null && currentUrl().isNotBlank() -> {
-                showPage()
-            }
-
-            panel != null && panelName != "home" -> {
-                showHome()
-            }
+            panel != null && currentUrl().isNotBlank() -> showPage()
+            panel != null && panelName != "home" -> showHome()
 
             panel != null -> {
                 AlertDialog.Builder(this)
                     .setTitle("Exit browser?")
                     .setNegativeButton("Stay", null)
-                    .setPositiveButton("Exit") { _, _ ->
-                        finish()
-                    }
+                    .setPositiveButton("Exit") { _, _ -> finish() }
                     .show()
             }
 
             stopped.contains(session) -> {
-                if (sessions.size > 1) {
-                    closeChild()
-                } else {
-                    showHome()
-                }
+                if (sessions.size > 1) closeChild() else showHome()
             }
 
             back[session] == true -> session.goBack()
@@ -1627,11 +1472,11 @@ class BrowserActivity : AppCompatActivity() {
     private fun setFullscreen(value: Boolean) {
         fullscreen = value
         pointerInVideo = false
+
         hold.reset()
         root.pausePointer()
 
-        toolbar.visibility =
-            if (value) View.GONE else View.VISIBLE
+        toolbar.visibility = if (value) View.GONE else View.VISIBLE
 
         window.decorView.systemUiVisibility =
             if (value) {
@@ -1643,22 +1488,15 @@ class BrowserActivity : AppCompatActivity() {
             }
 
         updateKeepAwake()
+
         if (value) gecko.requestFocus()
     }
 
     private fun updateKeepAwake() {
-        if (
-            resumed &&
-            panel == null &&
-            (fullscreen || playing)
-        ) {
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-            )
+        if (resumed && panel == null && (fullscreen || playing)) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
-            window.clearFlags(
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-            )
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
@@ -1669,13 +1507,11 @@ class BrowserActivity : AppCompatActivity() {
         return (
             host == "youtube.com" ||
                 host.endsWith(".youtube.com")
-        ) && uri.path.orEmpty().startsWith("/tv")
+            ) && uri.path.orEmpty().startsWith("/tv")
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (!::root.isInitialized) {
-            return super.dispatchKeyEvent(event)
-        }
+        if (!::root.isInitialized) return super.dispatchKeyEvent(event)
 
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             return super.dispatchKeyEvent(event)
@@ -1700,25 +1536,15 @@ class BrowserActivity : AppCompatActivity() {
                 val active = media.getValue(session)
 
                 when (event.keyCode) {
-                    KeyEvent.KEYCODE_MEDIA_PLAY ->
-                        active.play()
-
-                    KeyEvent.KEYCODE_MEDIA_PAUSE ->
-                        active.pause()
-
-                    KeyEvent.KEYCODE_MEDIA_STOP ->
-                        active.stop()
-
-                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD ->
-                        active.seekForward()
-
-                    KeyEvent.KEYCODE_MEDIA_REWIND ->
-                        active.seekBackward()
-
-                    else ->
-                        if (playing) active.pause() else active.play()
+                    KeyEvent.KEYCODE_MEDIA_PLAY -> active.play()
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> active.pause()
+                    KeyEvent.KEYCODE_MEDIA_STOP -> active.stop()
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> active.seekForward()
+                    KeyEvent.KEYCODE_MEDIA_REWIND -> active.seekBackward()
+                    else -> if (playing) active.pause() else active.play()
                 }
             }
+
             return true
         }
 
@@ -1728,8 +1554,10 @@ class BrowserActivity : AppCompatActivity() {
                     session.exitFullScreen()
                     setFullscreen(false)
                 }
+
                 openKeyboard()
             }
+
             return true
         }
 
@@ -1739,39 +1567,31 @@ class BrowserActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_NUMPAD_ENTER
         )
 
-        // Floating TV keyboards may not report IME insets.
-        // Native address editing always gets priority.
+        // TV keyboards may float without reporting IME insets.
+        // Focused address editing must reach the native field first.
         val keyboard =
             address.hasFocus() ||
                 root.keyboardVisible() ||
-                (
-                    event.device?.keyboardType ==
+                event.device?.keyboardType ==
                     android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC &&
-                        currentFocus?.onCheckIsTextEditor() == true
-                )
+                currentFocus?.onCheckIsTextEditor() == true
 
         if (fullscreen && !keyboard && select) {
             val action =
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     hold.down(event.eventTime, 700)
                 } else {
-                    hold.up(
-                        event.eventTime,
-                        700,
-                        event.isCanceled
-                    )
+                    hold.up(event.eventTime, 700, event.isCanceled)
                 }
 
             when (action) {
                 FullscreenPointerGesture.Action.TOGGLE -> {
                     pointerInVideo = !pointerInVideo
                     root.pausePointer()
+
                     toast(
-                        if (pointerInVideo) {
-                            "Video pointer on"
-                        } else {
-                            "Video remote controls on"
-                        }
+                        if (pointerInVideo) "Video pointer on"
+                        else "Video remote controls on"
                     )
                 }
 
@@ -1786,10 +1606,12 @@ class BrowserActivity : AppCompatActivity() {
                             event.keyCode,
                             0
                         )
+
                         val up = KeyEvent.changeAction(
                             down,
                             KeyEvent.ACTION_UP
                         )
+
                         gecko.dispatchKeyEvent(down)
                         gecko.dispatchKeyEvent(up)
                     }
@@ -1807,31 +1629,21 @@ class BrowserActivity : AppCompatActivity() {
             event.keyCode,
             event.repeatCount,
             keyboard,
-            panel == null &&
-                (
-                    nativeTvPage() ||
-                        fullscreen && !pointerInVideo
+            panel == null && (
+                nativeTvPage() ||
+                    fullscreen && !pointerInVideo
                 ),
             !fullscreen || pointerInVideo,
+            { root.handleRemoteKey(it) },
             {
-                root.handleRemoteKey(it)
-            },
-            {
-                if (
-                    panel == null &&
-                    !stopped.contains(session)
-                ) {
+                if (panel == null && !stopped.contains(session)) {
                     gecko.dispatchKeyEvent(it)
                 } else {
                     false
                 }
             },
-            {
-                super.dispatchKeyEvent(it)
-            },
-            {
-                root.pausePointer()
-            }
+            { super.dispatchKeyEvent(it) },
+            { root.pausePointer() }
         )
     }
 
@@ -1839,18 +1651,38 @@ class BrowserActivity : AppCompatActivity() {
         address.requestFocus()
         address.selectAll()
 
+        val original = address.text.toString()
+
         address.post {
             getSystemService(InputMethodManager::class.java)
                 .showSoftInput(
                     address,
                     InputMethodManager.SHOW_IMPLICIT
                 )
+
+            if (
+                address.hasFocus() &&
+                address.text.toString() == original
+            ) {
+                address.selectAll()
+            }
+
+            address.postDelayed({
+                // Do not select over replacement text already being typed.
+                if (
+                    address.hasFocus() &&
+                    address.text.toString() == original
+                ) {
+                    address.selectAll()
+                }
+            }, 180)
         }
     }
 
     private fun hideKeyboard() {
         getSystemService(InputMethodManager::class.java)
             .hideSoftInputFromWindow(address.windowToken, 0)
+
         address.clearFocus()
     }
 
@@ -1868,15 +1700,13 @@ class BrowserActivity : AppCompatActivity() {
                                 Intent.URI_INTENT_SCHEME
                             )
                         } else {
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse(url)
-                            )
+                            Intent(Intent.ACTION_VIEW, Uri.parse(url))
                         }
 
                     intent.component = null
                     intent.selector = null
                     intent.addCategory(Intent.CATEGORY_BROWSABLE)
+
                     startActivity(intent)
                 } catch (_: Exception) {
                     toast("No installed app can open this link.")
@@ -1887,19 +1717,22 @@ class BrowserActivity : AppCompatActivity() {
 
     private fun handleIntent(intent: Intent?): Boolean {
         val text = when (intent?.action) {
-            Intent.ACTION_VIEW ->
+            Intent.ACTION_VIEW -> {
                 intent.dataString?.takeIf {
                     Uri.parse(it).scheme in listOf("http", "https")
                 }
+            }
 
-            Intent.ACTION_SEND ->
+            Intent.ACTION_SEND -> {
                 intent.getStringExtra(Intent.EXTRA_TEXT)
                     ?.let(::addressOrSearch)
+            }
 
             else -> null
         }
 
         if (text.isNullOrBlank()) return false
+
         load(text)
         return true
     }
@@ -1912,6 +1745,7 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+
         resumed = true
         extensionPermissions.attach()
 
@@ -1925,17 +1759,20 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         if (panelName == "downloads") showDownloads()
+
         updateKeepAwake()
     }
 
     override fun onPause() {
         resumed = false
         extensionPermissions.detach()
+
         root.pausePointer()
         keys.reset()
         hold.reset()
 
         downloadUpdate?.let(main::removeCallbacks)
+
         media[session]?.pause()
         playing = false
 
@@ -1952,6 +1789,7 @@ class BrowserActivity : AppCompatActivity() {
         if (panel == null && currentUrl().isNotBlank()) {
             out.putString("page", currentUrl())
         }
+
         super.onSaveInstanceState(out)
     }
 
@@ -1965,10 +1803,7 @@ class BrowserActivity : AppCompatActivity() {
         ) {
             releaseBackgroundWindows()
 
-            if (
-                ::root.isInitialized &&
-                sessions.isNotEmpty()
-            ) {
+            if (::root.isInitialized && sessions.isNotEmpty()) {
                 updateButtons()
             }
         }
@@ -1978,10 +1813,7 @@ class BrowserActivity : AppCompatActivity() {
         super.onLowMemory()
         releaseBackgroundWindows()
 
-        if (
-            ::root.isInitialized &&
-            sessions.isNotEmpty()
-        ) {
+        if (::root.isInitialized && sessions.isNotEmpty()) {
             updateButtons()
         }
     }
@@ -1997,11 +1829,12 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         if (::gecko.isInitialized) gecko.releaseSession()
+
         sessions.forEach {
             if (it.isOpen) it.close()
         }
-        sessions.clear()
 
+        sessions.clear()
         super.onDestroy()
     }
 
@@ -2026,13 +1859,12 @@ class BrowserActivity : AppCompatActivity() {
         setPadding(dp(12), dp(8), dp(12), dp(8))
     }
 
-    private fun listBody(title: String) =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(16), dp(24), dp(24))
-            setBackgroundColor(Color.rgb(42, 44, 50))
-            addView(label(title, 30))
-        }
+    private fun listBody(title: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(24), dp(16), dp(24), dp(24))
+        setBackgroundColor(Color.rgb(42, 44, 50))
+        addView(label(title, 30))
+    }
 
     private fun action(
         parent: LinearLayout,
@@ -2070,10 +1902,7 @@ class BrowserActivity : AppCompatActivity() {
                 intArrayOf(android.R.attr.state_focused),
                 shape(Color.rgb(180, 210, 240))
             )
-            addState(
-                intArrayOf(),
-                shape(Color.WHITE)
-            )
+            addState(intArrayOf(), shape(Color.WHITE))
         }
     }
 
@@ -2083,10 +1912,9 @@ class BrowserActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "TVBrowser"
 
-        // Main website plus one explicitly opened child window.
-        private const val MAX_WINDOWS = 2
+        // Website popups and extra windows are always blocked.
+        private const val MAX_WINDOWS = 1
 
-        private val WORKER =
-            Executors.newSingleThreadExecutor()
+        private val WORKER = Executors.newSingleThreadExecutor()
     }
 }
