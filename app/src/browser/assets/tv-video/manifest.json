@@ -1,0 +1,25 @@
+{
+  "manifest_version": 2,
+  "name": "TV video controls",
+  "version": "1.0.0",
+  "description": "Unmute, fullscreen, and video fitting for the TV browser.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tv-video@mom-browser.local"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "controls.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ]
+}
