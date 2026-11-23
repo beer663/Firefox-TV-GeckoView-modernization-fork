@@ -332,7 +332,9 @@
           overflow-y:visible !important;
         }
 
-        html[data-mom-tv-ntv] .main-layout:has(.watch-page-wrapper) {
+        html[data-mom-tv-ntv] .main-layout:has(.watch-page-wrapper),
+        html[data-mom-tv-ntv] .main-layout:has(.matches-page-wrapper) {
+          margin-top:var(--navbar-height,0px) !important;
           height:auto !important;
           min-height:0 !important;
           overflow:visible !important;
@@ -340,13 +342,27 @@
         }
 
         html[data-mom-tv-ntv] .watch-page-wrapper,
-        html[data-mom-tv-ntv] .watch-page-container {
+        html[data-mom-tv-ntv] .watch-page-container,
+        html[data-mom-tv-ntv] .matches-page-wrapper,
+        html[data-mom-tv-ntv] .matches-page-container,
+        html[data-mom-tv-ntv] .matches-content-wrapper {
           position:relative !important;
           inset:auto !important;
           height:auto !important;
           max-height:none !important;
           min-height:0 !important;
           overflow:visible !important;
+        }
+
+        @media (max-width:1261px) {
+          html[data-mom-tv-ntv] .main-layout:has(.watch-page-wrapper),
+          html[data-mom-tv-ntv] .main-layout:has(.matches-page-wrapper) {
+            margin-top:0 !important;
+          }
+        }
+
+        html[data-mom-tv-ntv].layout-nav-bottom .main-layout {
+          margin-top:0 !important;
         }
 
         html[data-mom-tv-ntv] .watch-player-wrapper {
@@ -372,7 +388,7 @@
 
     const fit =
       ntvHost &&
-      !!document.querySelector(".watch-player-wrapper") &&
+      !!document.querySelector(".watch-page-wrapper,.matches-page-wrapper") &&
       !fullscreen();
 
     if (fit) {
