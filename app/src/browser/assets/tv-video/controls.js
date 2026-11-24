@@ -330,6 +330,7 @@
           height:auto !important;
           max-height:none !important;
           overflow-y:visible !important;
+          overscroll-behavior-y:auto !important;
         }
 
         html[data-mom-tv-ntv] .main-layout:has(.watch-page-wrapper),
