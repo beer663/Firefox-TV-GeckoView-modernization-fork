@@ -1,4 +1,4 @@
-name: Build Firefox TV (Gecko debug APK)
+name: Build Mom Firefox and publish GitHub release
 
 on:
   workflow_dispatch:
@@ -41,25 +41,32 @@ jobs:
       - name: Print resolved GeckoView runtime dependency
         run: bash ./gradlew :app:dependencyInsight --configuration geckoDebugRuntimeClasspath --dependency org.mozilla.geckoview
 
-      - name: Build Gecko debug APK (automatic debug signing)
+      - name: Build and check separate Gecko debug APKs
         shell: bash
         run: |
           set -euo pipefail
           version_code=$((1000 + GITHUB_RUN_NUMBER))
-          bash ./gradlew :app:assembleGeckoDebug \
-            -PtvVersionCode="$version_code" \
-            -PtvVersionName="5.0.$GITHUB_RUN_NUMBER" \
-            --stacktrace
-
-      - name: Prepare and verify ARMv7 APK
-        shell: bash
-        run: |
           mkdir -p release-files
 
-          python3 - <<'PY'
+          for browser_abi in armeabi-v7a arm64-v8a x86_64; do
+            bash ./gradlew :app:assembleGeckoDebug \
+              -PtvAbi="$browser_abi" \
+              -PtvVersionCode="$version_code" \
+              -PtvVersionName="5.0.$GITHUB_RUN_NUMBER" \
+              --stacktrace
+
+            python3 - "$browser_abi" <<'PY'
           from pathlib import Path
           import shutil
+          import sys
           import zipfile
+
+          expected_abi = sys.argv[1]
+          labels = {
+              'armeabi-v7a': 'ARMv7',
+              'arm64-v8a': 'ARM64-v8a',
+              'x86_64': 'x86_64',
+          }
 
           apks = list(Path('app/build/outputs/apk/gecko/debug').glob('*.apk'))
 
@@ -67,27 +74,51 @@ jobs:
               raise SystemExit(f'Expected exactly one APK, found {len(apks)}')
 
           with zipfile.ZipFile(apks[0]) as archive:
+              corrupt = archive.testzip()
+              if corrupt is not None:
+                  raise SystemExit(f'Corrupt APK entry: {corrupt}')
+
               abis = {
                   name.split('/')[1]
                   for name in archive.namelist()
                   if name.startswith('lib/') and name.endswith('.so')
               }
 
-          if abis != {'armeabi-v7a'}:
+          if abis != {expected_abi}:
               raise SystemExit(
-                  f'Expected ARMv7 only, found: {sorted(abis)}. '
-                  'Check the default ABI list in app/build.gradle.'
+                  f'Expected only {expected_abi}, found: {sorted(abis)}'
               )
 
-          shutil.copyfile(
-              apks[0],
-              'release-files/Moms-Firefox-TV-ARMv7-debug.apk'
+          destination = Path('release-files') / (
+              f'Moms-Firefox-TV-{labels[expected_abi]}-debug.apk'
           )
+          shutil.copyfile(apks[0], destination)
+          print(f'Prepared {destination} containing only {expected_abi}.')
+          PY
+          done
 
-          print('Verified ARMv7-only APK.')
+      - name: Verify all three APKs and signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          expected = {
+              'Moms-Firefox-TV-ARMv7-debug.apk',
+              'Moms-Firefox-TV-ARM64-v8a-debug.apk',
+              'Moms-Firefox-TV-x86_64-debug.apk',
+          }
+          actual = {path.name for path in Path('release-files').glob('*.apk')}
+
+          if actual != expected:
+              raise SystemExit(f'Expected three architecture APKs, found: {sorted(actual)}')
           PY
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify release-files/Moms-Firefox-TV-ARMv7-debug.apk
+          for browser_apk in release-files/*.apk; do
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$browser_apk"
+          done
 
       - name: Publish APK to GitHub Releases
         shell: bash
@@ -96,9 +127,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: tv-gecko-${{ github.run_number }}-${{ github.run_attempt }}
         run: |
+          set -euo pipefail
           gh release create "$RELEASE_TAG" \
-            release-files/Moms-Firefox-TV-ARMv7-debug.apk \
+            release-files/*.apk \
             --target "$GITHUB_SHA" \
-            --title "Mom's Firefox TV - Build $GITHUB_RUN_NUMBER" \
-            --notes "ARMv7 debug APK using Android automatic debug signing. Package: org.mozilla.tv.firefox.debug. A new GitHub runner may use a different debug certificate: uninstall the previous test build if Android reports an update/signature conflict." \
-            --prerelease
+            --title "Mom Firefox 5.0.$GITHUB_RUN_NUMBER - separate debug APKs" \
+            --notes-file RELEASE-NOTES.md \
+            --latest
