@@ -78,6 +78,7 @@ class BrowserActivity : AppCompatActivity() {
     private val savedStates = mutableMapOf<GeckoSession, String>()
     private val savedStateUrls = mutableMapOf<GeckoSession, String>()
     private var pausedForBackground = false
+    private var restorePageFocus = false
     private var deferredVisit: Pair<String, String?>? = null
     private var navigationStartedAt = 0L
 
@@ -119,6 +120,14 @@ class BrowserActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         root = findViewById(R.id.rootView)
+        root.onInputWindowFocusChanged = { focused ->
+            keys.reset()
+            hold.reset()
+            if (!closed && ::gecko.isInitialized) {
+                if (!focused && resumed) rememberPageInputFocus()
+                else if (focused && resumed) restorePageInputFocus()
+            }
+        }
         toolbar = findViewById(R.id.tvToolbar)
         container = findViewById(R.id.container)
         address = findViewById(R.id.tvAddressInput)
@@ -951,7 +960,7 @@ class BrowserActivity : AppCompatActivity() {
         if (!stopped.contains(session)) {
             session.setPriorityHint(if (resumed) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
             session.setActive(resumed)
-            session.setFocused(resumed)
+            session.setFocused(resumed && hasWindowFocus() && gecko.hasFocus())
         }
 
         progress.visibility =
@@ -1730,6 +1739,20 @@ class BrowserActivity : AppCompatActivity() {
                     android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC &&
                 currentFocus?.onCheckIsTextEditor() == true
 
+        if (select && (event.action == KeyEvent.ACTION_UP || event.repeatCount == 0)) {
+            val route = when {
+                keyboard -> "keyboard"
+                fullscreen -> "fullscreen"
+                panel == null && nativeTvPage() -> "TV page"
+                else -> "cursor"
+            }
+            Log.i(
+                TAG,
+                "REMOTE_OK action=${event.action} route=$route " +
+                    "focus=${currentFocus?.javaClass?.simpleName}"
+            )
+        }
+
         if (fullscreen && !keyboard && select) {
             val action =
                 if (event.action == KeyEvent.ACTION_DOWN) {
@@ -1953,6 +1976,7 @@ class BrowserActivity : AppCompatActivity() {
 
         resumed = true
         pausedForBackground = false
+        resetRemoteControls()
         extensionPermissions.attach()
         val deferred = deferredVisit
         deferredVisit = null
@@ -1961,17 +1985,57 @@ class BrowserActivity : AppCompatActivity() {
 
         if (panelName == "downloads") showDownloads()
 
+        restorePageInputFocus()
         updateKeepAwake()
     }
 
+    private fun resetRemoteControls() {
+        keys.reset()
+        hold.reset()
+        if (::root.isInitialized) root.resetRemoteInput()
+    }
+
+    private fun rememberPageInputFocus() {
+        restorePageFocus = panel == null && ::gecko.isInitialized && gecko.hasFocus()
+    }
+
+    private fun restorePageInputFocus() {
+        root.post {
+            if (closed || !resumed || !hasWindowFocus()) return@post
+            if (panel != null || sessions.isEmpty() || stopped.contains(session)) {
+                restorePageFocus = false
+                return@post
+            }
+
+            val requestPageFocus = restorePageFocus
+            restorePageFocus = false
+
+            // Preserve native address editing, dialogs, and an open TV keyboard.
+            if (requestPageFocus &&
+                !address.hasFocus() &&
+                (currentFocus == null || gecko.hasFocus()) &&
+                !root.keyboardVisible() &&
+                permissionDialogs.isEmpty()
+            ) {
+                gecko.requestFocus()
+            }
+
+            session.setFocused(gecko.hasFocus())
+            Log.i(
+                TAG,
+                "INPUT_RESUME page=true geckoFocus=${gecko.hasFocus()} " +
+                    "keyboard=${root.keyboardVisible()}"
+            )
+        }
+    }
+
     override fun onPause() {
+        rememberPageInputFocus()
         resumed = false
         pausedForBackground = true
         extensionPermissions.detach()
 
-        root.pausePointer()
-        keys.reset()
-        hold.reset()
+        resetRemoteControls()
 
         downloadUpdate?.let(main::removeCallbacks)
 
@@ -2065,6 +2129,8 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         closed = true
+        resetRemoteControls()
+        if (::root.isInitialized) root.onInputWindowFocusChanged = null
         deferredVisit = null
         main.removeCallbacksAndMessages(null)
         prompts.close()
