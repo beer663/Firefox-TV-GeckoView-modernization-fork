@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.os.SystemClock
 import android.util.AttributeSet
+import android.util.Log
 import android.view.Choreographer
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -28,6 +29,7 @@ class TvCursorLayout @JvmOverloads constructor(
 ) : FrameLayout(context, attrs), Choreographer.FrameCallback {
 
     var scrollPage: ((Float, Float, Int, Int) -> Boolean)? = null
+    var onInputWindowFocusChanged: ((Boolean) -> Unit)? = null
 
     private val motion = RemoteCursorMotion()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -38,6 +40,7 @@ class TvCursorLayout @JvmOverloads constructor(
     private var gesture = false
     private var downTime = 0L
     private var lastInput = 0L
+    private var inputGeneration = 0L
 
     private val hide = Runnable { invalidate() }
 
@@ -83,14 +86,19 @@ class TvCursorLayout @JvmOverloads constructor(
             }
 
             if (select && gesture) {
-                sendTouch(
+                // Mark the stream finished before a click can open another window.
+                gesture = false
+                val handled = sendTouch(
                     if (event.isCanceled) {
                         MotionEvent.ACTION_CANCEL
                     } else {
                         MotionEvent.ACTION_UP
                     }
                 )
-                gesture = false
+                Log.i(
+                    "TVBrowser",
+                    "POINTER_UP cancelled=${event.isCanceled} handled=$handled"
+                )
             }
 
             reveal()
@@ -123,9 +131,9 @@ class TvCursorLayout @JvmOverloads constructor(
         if (direction != 0) {
             motion.key(direction, true)
             scheduleFrame()
-        } else if (event.repeatCount == 0 && !gesture) {
-            downTime = SystemClock.uptimeMillis()
-            gesture = sendTouch(MotionEvent.ACTION_DOWN)
+        } else if (event.repeatCount == 0) {
+            // A fresh press replaces a stream whose release was lost.
+            beginTouch()
         }
 
         return true
@@ -243,18 +251,43 @@ class TvCursorLayout @JvmOverloads constructor(
 
     fun dispatchSelectClick(): Boolean {
         pausePointer()
-        downTime = SystemClock.uptimeMillis()
 
-        val handled = sendTouch(MotionEvent.ACTION_DOWN)
-        sendTouch(MotionEvent.ACTION_UP)
+        val handled = beginTouch()
+        if (gesture) {
+            gesture = false
+            sendTouch(MotionEvent.ACTION_UP)
+        }
         reveal()
 
         return handled
     }
 
-    private fun sendTouch(action: Int): Boolean {
+    private fun beginTouch(): Boolean {
+        if (gesture) pausePointer()
+        downTime = SystemClock.uptimeMillis()
+        val pressDownTime = downTime
+        val generation = inputGeneration
+
+        // Focus can change synchronously inside dispatchTouchEvent().
+        // Own the stream before dispatch so that reset can cancel it.
+        gesture = true
+        val handled = sendTouch(MotionEvent.ACTION_DOWN)
+
+        if (generation != inputGeneration) {
+            gesture = false
+            sendTouch(MotionEvent.ACTION_CANCEL, pressDownTime)
+            Log.i("TVBrowser", "Pointer press cancelled during input/focus change")
+            return false
+        }
+
+        gesture = handled
+        Log.i("TVBrowser", "POINTER_DOWN handled=$handled")
+        return handled
+    }
+
+    private fun sendTouch(action: Int, eventDownTime: Long = downTime): Boolean {
         val event = MotionEvent.obtain(
-            downTime,
+            eventDownTime,
             SystemClock.uptimeMillis(),
             action,
             motion.x,
@@ -317,10 +350,8 @@ class TvCursorLayout @JvmOverloads constructor(
     }
 
     fun pausePointer() {
-        if (gesture) {
-            sendTouch(MotionEvent.ACTION_CANCEL)
-        }
-
+        inputGeneration++
+        val cancel = gesture
         gesture = false
         motion.stop()
 
@@ -332,19 +363,26 @@ class TvCursorLayout @JvmOverloads constructor(
 
         removeCallbacks(hide)
         invalidate()
+
+        if (cancel) sendTouch(MotionEvent.ACTION_CANCEL)
+    }
+
+    fun resetRemoteInput() {
+        consumed.clear()
+        pausePointer()
+        downTime = 0L
     }
 
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
         super.onWindowFocusChanged(hasWindowFocus)
 
-        if (!hasWindowFocus) {
-            pausePointer()
-        }
+        resetRemoteInput()
+        onInputWindowFocusChanged?.invoke(hasWindowFocus)
     }
 
     override fun onDetachedFromWindow() {
-        pausePointer()
-        consumed.clear()
+        resetRemoteInput()
+        onInputWindowFocusChanged?.invoke(false)
         super.onDetachedFromWindow()
     }
 
